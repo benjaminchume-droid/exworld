@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(exworld VERSION 0.3.0 LANGUAGES CXX)
+project(exworld VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,7 +19,7 @@ if(NOT TARGET exgine_core)
   add_subdirectory("${EXGINE_ROOT}" "${CMAKE_BINARY_DIR}/exgine" EXCLUDE_FROM_ALL)
 endif()
 
-add_executable(exworld
+set(EXWORLD_SOURCES
   src/main.cpp
   src/game.cpp
   src/player.cpp
@@ -33,7 +33,11 @@ add_executable(exworld
   src/police.cpp
   src/interior.cpp
   src/save.cpp
+  src/asset_package.cpp
+  src/hud.cpp
 )
+
+add_executable(exworld ${EXWORLD_SOURCES})
 
 target_include_directories(exworld PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/include

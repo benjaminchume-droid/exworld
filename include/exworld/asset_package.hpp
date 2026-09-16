@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -12,7 +13,7 @@ struct BakedPackage {
     std::string path;
     std::string kind;
     float version = 1.f;
-    std::string body; // raw .exg text loaded from assets
+    std::string body;
 };
 
 struct WorldScale {
@@ -24,13 +25,11 @@ struct WorldScale {
     float stream_radius = 400.f;
 };
 
-// Reads content/baked/index.exg + listed packages (CI-prebuilt, shipped in APK).
 class AssetPackageRegistry {
 public:
-    using Loader = bool (*)(std::string_view path, std::string& out); // not used; lambda via template-free std::function alternative
+    using FileLoader = std::function<bool(std::string_view, std::string&)>;
 
-    bool load_from_text(std::string_view index_text,
-                        const std::function<bool(std::string_view, std::string&)>& file_loader);
+    bool load_from_text(std::string_view index_text, const FileLoader& file_loader);
 
     [[nodiscard]] bool has(std::string_view name) const;
     [[nodiscard]] const BakedPackage* get(std::string_view name) const;
@@ -46,5 +45,3 @@ private:
 };
 
 } // namespace exworld
-
-#include <functional>

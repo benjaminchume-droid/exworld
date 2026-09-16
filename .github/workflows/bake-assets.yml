@@ -1,0 +1,36 @@
+name: Bake EXWORLD .exg packages
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'content/**'
+      - 'tools/**'
+      - '.github/workflows/bake-assets.yml'
+
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify baked package set
+        run: |
+          set -e
+          test -f content/baked/index.exg
+          test -f content/baked/downtown.exg
+          test -f content/baked/forest.exg
+          test -f content/baked/lake.exg
+          test -f content/baked/swamp.exg
+          test -f content/baked/vehicles.exg
+          test -f content/baked/animation.exg
+          test -f content/baked/sound.exg
+          test -f content/scenes/exworld.scene
+          test -f content/project.exg
+          echo "Baked packages OK"
+          wc -l content/baked/*.exg content/scenes/exworld.scene
+      - name: Upload baked content tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: exworld-baked-content
+          path: content/
+          retention-days: 14
