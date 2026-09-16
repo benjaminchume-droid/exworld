@@ -29,22 +29,19 @@ exgine::EntityId find_by_kind(exgine::Runtime& r, exgine::NodeKind kind) {
     return exgine::invalid_entity;
 }
 
-// Accept any merged character name as the controllable player
 exgine::EntityId find_player_entity(exgine::Runtime& r) {
     static constexpr const char* kNames[] = {
         "Sebastian", "Player", "Explorer", "DawnOfLight"
     };
     for (const char* n : kNames) {
         auto id = find_by_name(r, n);
-        if (id) {
-            auto* e = r.state().entities.get(id);
-            // Prefer real player nodes; DawnOfLight may be NPC — still allow if named first
-            if (e && (e->kind == exgine::NodeKind::Player || e->name == "Sebastian" ||
-                      e->name == "Player" || e->name == "Explorer"))
-                return id;
-        }
+        if (!id) continue;
+        auto* e = r.state().entities.get(id);
+        if (!e) continue;
+        if (e->kind == exgine::NodeKind::Player || e->name == "Sebastian" ||
+            e->name == "Player" || e->name == "Explorer")
+            return id;
     }
-    // Prefer Sebastian if tagged NPC somehow, then any Player kind
     if (auto id = find_by_name(r, "Sebastian")) return id;
     if (auto id = find_by_kind(r, exgine::NodeKind::Player)) return id;
     if (auto id = find_by_name(r, "DawnOfLight")) return id;
@@ -76,17 +73,24 @@ bool ExWorldGame::open(std::string_view content_root) {
 
 bool ExWorldGame::open_from_manifest(std::string_view manifest_text) {
     ready_ = configured_ = false;
+
     if (!engine_.open_project(manifest_text)) {
         std::cerr << "EXWORLD: PlayableGame::open_project failed\n";
         return false;
     }
-    // Soft configure: do not hard-abort the whole game if animation fails
+
+    // open_project already transitions to MainMenu / PlayableStatus::Menu.
+    // Do NOT require show_menu() — can_transition(MainMenu→MainMenu) is false
+    // and was causing open() to fail on every successful project load.
+    (void)engine_.show_menu();
+
     if (!configure_systems()) {
         std::cerr << "EXWORLD: configure_systems soft-failed (continuing)\n";
     }
     (void)spawn_world_content();
+
     configured_ = true;
-    return engine_.show_menu();
+    return true;
 }
 
 bool ExWorldGame::start() noexcept {
@@ -103,7 +107,7 @@ bool ExWorldGame::configure_systems() {
 
     auto player_id = find_player_entity(runtime);
     if (!player_id) {
-        std::cerr << "EXWORLD: no playable entity (Sebastian/Player/Explorer)\n";
+        std::cerr << "EXWORLD: no playable entity (Sebastian/Player)\n";
         return false;
     }
 
@@ -114,7 +118,6 @@ bool ExWorldGame::configure_systems() {
 
     player_.bind(runtime, player_id, cid);
 
-    // Soft: animation optional — game must still run without clips
     if (!animation_.initialize(runtime, player_id)) {
         std::cerr << "EXWORLD: AnimationDriver unavailable (running without clips)\n";
     }
