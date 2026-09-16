@@ -8,21 +8,46 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# EXGINE sibling (CI clones both under workspace)
-set(EXGINE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../exgine" CACHE PATH "Path to EXGINE")
-if(NOT EXISTS "${EXGINE_ROOT}/CMakeLists.txt")
-  if(DEFINED ENV{EXGINE_ROOT} AND EXISTS "$ENV{EXGINE_ROOT}/CMakeLists.txt")
-    set(EXGINE_ROOT "$ENV{EXGINE_ROOT}")
-  else()
-    message(FATAL_ERROR "EXGINE not found. Set EXGINE_ROOT or place exgine as sibling of exworld.")
-  endif()
+# Resolve EXGINE_ROOT: Gradle -D, env, then sibling probes
+if(DEFINED EXGINE_ROOT AND EXISTS "${EXGINE_ROOT}/CMakeLists.txt")
+  # already set via -DEXGINE_ROOT=...
+elseif(DEFINED ENV{EXGINE_ROOT} AND EXISTS "$ENV{EXGINE_ROOT}/CMakeLists.txt")
+  set(EXGINE_ROOT "$ENV{EXGINE_ROOT}")
+else()
+  # platform/android -> ../../../exgine  (CI: workspace/exgine next to workspace/exworld)
+  set(_candidates
+    "${CMAKE_CURRENT_LIST_DIR}/../../../exgine"
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../exgine"
+    "${CMAKE_CURRENT_LIST_DIR}/../../exgine"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../exgine"
+  )
+  set(EXGINE_ROOT "")
+  foreach(_c IN LISTS _candidates)
+    get_filename_component(_abs "${_c}" ABSOLUTE)
+    if(EXISTS "${_abs}/CMakeLists.txt")
+      set(EXGINE_ROOT "${_abs}")
+      break()
+    endif()
+  endforeach()
 endif()
+
+if(NOT EXGINE_ROOT OR NOT EXISTS "${EXGINE_ROOT}/CMakeLists.txt")
+  message(FATAL_ERROR
+    "EXGINE not found.\n"
+    "  CMAKE_CURRENT_LIST_DIR=${CMAKE_CURRENT_LIST_DIR}\n"
+    "  EXGINE_ROOT=${EXGINE_ROOT}\n"
+    "  ENV EXGINE_ROOT=$ENV{EXGINE_ROOT}\n"
+    "Pass -DEXGINE_ROOT=/path/to/exgine or place exgine as a sibling of exworld.")
+endif()
+
+message(STATUS "EXWORLD Android using EXGINE_ROOT=${EXGINE_ROOT}")
 
 set(EXGINE_BUILD_DEMO OFF CACHE BOOL "" FORCE)
 set(EXGINE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 add_subdirectory("${EXGINE_ROOT}" "${CMAKE_BINARY_DIR}/exgine-core")
 
 set(EXWORLD_ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
+get_filename_component(EXWORLD_ROOT "${EXWORLD_ROOT}" ABSOLUTE)
 
 set(ANDROID_GLUE_DIR "${ANDROID_NDK}/sources/android/native_app_glue")
 set(ANDROID_GLUE_SOURCE "${ANDROID_GLUE_DIR}/android_native_app_glue.c")
@@ -56,7 +81,6 @@ target_include_directories(exworld_android PRIVATE
 target_compile_features(exworld_android PRIVATE cxx_std_20)
 target_compile_definitions(exworld_android PRIVATE EXWORLD_ANDROID=1)
 
-# EXGINE public library target is exgine_core
 target_link_libraries(exworld_android PRIVATE
   exgine_core
   android

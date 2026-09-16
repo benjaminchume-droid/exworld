@@ -1,5 +1,24 @@
 plugins { id 'com.android.application' }
 
+def resolveExgineRoot() {
+    def env = System.getenv("EXGINE_ROOT")
+    if (env != null && new File(env, "CMakeLists.txt").exists()) return env
+    // CI: workspace/exgine next to workspace/exworld
+    def candidates = [
+        file("../../../../exgine").absolutePath,
+        file("../../../exgine").absolutePath,
+        file("${rootDir}/../../../exgine").absolutePath,
+        file("${rootDir}/../../../../exgine").absolutePath
+    ]
+    for (c in candidates) {
+        if (new File(c, "CMakeLists.txt").exists()) return c
+    }
+    return file("../../../../exgine").absolutePath
+}
+
+def exgineRoot = resolveExgineRoot()
+println "EXWORLD Gradle EXGINE_ROOT=${exgineRoot}"
+
 android {
     namespace 'com.exworld.game'
     compileSdk 35
@@ -8,16 +27,17 @@ android {
         applicationId 'com.exworld.game'
         minSdk 26
         targetSdk 35
-        versionCode 3
-        versionName '0.3.0'
+        versionCode 4
+        versionName '0.3.1'
         ndkVersion '27.2.12479018'
 
         externalNativeBuild {
             cmake {
-                arguments '-DANDROID_STL=c++_static',
-                          '-DEXGINE_BUILD_DEMO=OFF',
-                          '-DEXGINE_BUILD_TESTS=OFF',
-                          '-DEXWORLD_ANDROID=ON'
+                arguments "-DANDROID_STL=c++_static",
+                          "-DEXGINE_BUILD_DEMO=OFF",
+                          "-DEXGINE_BUILD_TESTS=OFF",
+                          "-DEXWORLD_ANDROID=ON",
+                          "-DEXGINE_ROOT=${exgineRoot}"
                 abiFilters 'arm64-v8a', 'armeabi-v7a'
             }
         }
@@ -36,7 +56,6 @@ android {
 
     sourceSets {
         main {
-            // Ship game content as Android assets
             assets.srcDirs = ['../../../content']
         }
     }

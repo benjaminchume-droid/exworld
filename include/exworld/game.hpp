@@ -2,7 +2,6 @@
 
 #include "exgine/playable.hpp"
 #include "exgine/runtime.hpp"
-#include "exgine/android.hpp"
 
 #include "exworld/player.hpp"
 #include "exworld/vehicle.hpp"
@@ -20,24 +19,24 @@
 #include <string_view>
 #include <vector>
 
+namespace exgine {
+class AndroidEglPresenter; // forward decl — avoid pulling android.hpp into every TU
+struct RenderFrame;
+struct RenderResult;
+}
+
 namespace exworld {
 
 class ExWorldGame {
 public:
     explicit ExWorldGame(exgine::ProjectSourceLoader loader = {});
 
-    // Desktop / path-based
     [[nodiscard]] bool open(std::string_view content_root = "content");
-
-    // Android / asset-based: manifest already loaded from AAssetManager
     [[nodiscard]] bool open_from_manifest(std::string_view manifest_text);
-
     [[nodiscard]] bool start() noexcept;
 
     [[nodiscard]] bool update(double dt) noexcept;
     [[nodiscard]] bool build_frame(exgine::RenderFrame& frame, exgine::RenderResult& result) noexcept;
-
-    // Real device present (OpenGLES)
     [[nodiscard]] bool present(exgine::AndroidEglPresenter& presenter, int width, int height) noexcept;
 
     InputSystem& input() noexcept { return input_; }

@@ -1,7 +1,10 @@
 #include "exworld/game.hpp"
 
+#include "exgine/android.hpp"
 #include "exgine/render.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <iostream>
 
@@ -37,7 +40,6 @@ void ExWorldGame::set_input(const PlayerInput& input) noexcept {
 
 bool ExWorldGame::open(std::string_view content_root) {
     ready_ = configured_ = false;
-
     const std::filesystem::path root(content_root);
     std::string manifest;
     if (!loader_((root / "project.exg").string(), manifest) && !loader_("project.exg", manifest)) {
@@ -49,12 +51,10 @@ bool ExWorldGame::open(std::string_view content_root) {
 
 bool ExWorldGame::open_from_manifest(std::string_view manifest_text) {
     ready_ = configured_ = false;
-
     if (!engine_.open_project(manifest_text)) {
         std::cerr << "EXWORLD: PlayableGame::open_project failed\n";
         return false;
     }
-
     if (!configure_systems()) {
         std::cerr << "EXWORLD: configure_systems failed\n";
         return false;
@@ -63,7 +63,6 @@ bool ExWorldGame::open_from_manifest(std::string_view manifest_text) {
         std::cerr << "EXWORLD: spawn_world_content failed\n";
         return false;
     }
-
     configured_ = true;
     return engine_.show_menu();
 }
@@ -79,26 +78,21 @@ bool ExWorldGame::start() noexcept {
 
 bool ExWorldGame::configure_systems() {
     auto& runtime = engine_.session().game().runtime();
-
     auto player_id = find_by_name(runtime, "Player");
     if (!player_id) player_id = find_by_kind(runtime, exgine::NodeKind::Player);
     if (!player_id) {
         std::cerr << "EXWORLD: no Player entity in scene\n";
         return false;
     }
-
     exgine::CharacterId cid = exgine::invalid_character;
     const auto& bindings = runtime.character_bindings();
     auto it = bindings.find(player_id);
     if (it != bindings.end()) cid = it->second;
-
     player_.bind(runtime, player_id, cid);
-
     if (!animation_.initialize(runtime, player_id)) {
         std::cerr << "EXWORLD: AnimationDriver failed\n";
         return false;
     }
-
     sound_.initialize(runtime);
     world_.bootstrap(runtime);
     wanted_.reset();
@@ -114,23 +108,19 @@ bool ExWorldGame::spawn_world_content() {
     world_.clear();
     police_.clear();
     interiors_.clear();
-
     for (auto id : runtime.state().entities.ids()) {
         auto* e = runtime.state().entities.get(id);
         if (!e) continue;
-
         if (e->kind == exgine::NodeKind::Building) {
             world_.register_building(
                 id, {e->transform.x, e->transform.y, e->transform.z + 2.2f}, 2.1f);
             interiors_.register_building(
                 id, 3, 4, {e->transform.x, e->transform.y, e->transform.z});
         }
-        if (e->kind == exgine::NodeKind::Vehicle) {
+        if (e->kind == exgine::NodeKind::Vehicle)
             vehicles_.register_vehicle(runtime, id, e->name, {});
-        }
-        if (e->kind == exgine::NodeKind::NPC) {
+        if (e->kind == exgine::NodeKind::NPC)
             police_.register_unit(id);
-        }
     }
     return true;
 }
@@ -138,7 +128,6 @@ bool ExWorldGame::spawn_world_content() {
 void ExWorldGame::handle_interactions(float, exgine::Runtime& runtime) {
     PlayerInput in = use_forced_input_ ? forced_input_ : input_.poll();
     const auto pos = player_.position(runtime);
-
     if (in.interact && player_.mode() == PlayerMode::OnFoot) {
         auto veh = vehicles_.nearest_vehicle(pos, 3.5f, runtime);
         if (veh != exgine::invalid_entity) {
@@ -160,7 +149,6 @@ void ExWorldGame::handle_interactions(float, exgine::Runtime& runtime) {
             }
         }
     }
-
     if (in.exit) {
         if (player_.mode() == PlayerMode::InVehicle) {
             const auto* seat = vehicles_.seat(player_.current_vehicle());
@@ -205,36 +193,29 @@ bool ExWorldGame::update(double dt) noexcept {
     time_ += dt;
     auto& runtime = engine_.session().game().runtime();
     PlayerInput in = use_forced_input_ ? forced_input_ : input_.poll();
-
     handle_interactions(static_cast<float>(dt), runtime);
     update_vehicle_possession(static_cast<float>(dt), in, runtime);
-
     if (player_.mode() == PlayerMode::InsideBuilding && interiors_.active()) {
         interiors_.update(static_cast<float>(dt), in.move_x, in.move_z,
                           player_.entity(), runtime);
     } else {
         player_.update(in, static_cast<float>(dt), runtime);
     }
-
     animation_.update(static_cast<float>(dt), player_.motion(), runtime);
-
     const auto pos = player_.position(runtime);
     const bool in_vehicle = player_.mode() == PlayerMode::InVehicle;
     sound_.update(static_cast<float>(dt), pos, player_.motion().speed, in_vehicle,
                   in_vehicle ? 2200.f : 0.f, runtime);
-
     world_.set_stream_focus(pos, runtime);
     wanted_.update(static_cast<float>(dt), runtime);
     police_.update(static_cast<float>(dt), pos, wanted_.level(), runtime);
     update_camera(runtime);
-
     use_forced_input_ = false;
     return engine_.update(dt);
 }
 
 bool ExWorldGame::build_frame(exgine::RenderFrame& frame, exgine::RenderResult& result) noexcept {
     if (!ready_) return false;
-    // Headless path for desktop validation only
     exgine::Renderer renderer({exgine::RenderBackend::Headless, 1280, 720, true, true, 256, 128});
     if (!renderer.build_frame(engine_.session().game().runtime(), frame)) return false;
     result = renderer.submit(frame);
@@ -243,8 +224,8 @@ bool ExWorldGame::build_frame(exgine::RenderFrame& frame, exgine::RenderResult& 
 
 bool ExWorldGame::present(exgine::AndroidEglPresenter& presenter, int width, int height) noexcept {
     if (!ready_) return false;
-    const int w = width > 0 ? width : 1280;
-    const int h = height > 0 ? height : 720;
+    const std::uint32_t w = width > 0 ? static_cast<std::uint32_t>(width) : 1280u;
+    const std::uint32_t h = height > 0 ? static_cast<std::uint32_t>(height) : 720u;
     exgine::RenderFrame frame;
     exgine::Renderer renderer({exgine::RenderBackend::OpenGLES, w, h, true, true, 256, 128});
     if (!renderer.build_frame(engine_.session().game().runtime(), frame)) return false;

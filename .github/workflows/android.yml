@@ -44,7 +44,6 @@ jobs:
             "build-tools;35.0.0" \
             "ndk;27.2.12479018" \
             "cmake;3.22.1"
-
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
           if [ -z "$SDK_ROOT" ]; then
             [ -d "$HOME/Android/Sdk" ] && SDK_ROOT="$HOME/Android/Sdk"
@@ -53,7 +52,6 @@ jobs:
           NDK_DIR="$SDK_ROOT/ndk/27.2.12479018"
           test -d "$SDK_ROOT"
           test -d "$NDK_DIR"
-
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
@@ -70,7 +68,9 @@ jobs:
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           echo "ndk.dir=$ANDROID_NDK_HOME" >> local.properties
-          cat local.properties
+          echo "EXGINE_ROOT=$EXGINE_ROOT"
+          test -f "$EXGINE_ROOT/CMakeLists.txt"
+          ls -la "$EXGINE_ROOT" | head
 
       - name: Build debug APK
         working-directory: exworld/platform/android
@@ -78,8 +78,22 @@ jobs:
           EXGINE_ROOT: ${{ github.workspace }}/exgine
         run: |
           set -euo pipefail
+          echo "EXGINE_ROOT=$EXGINE_ROOT"
           test -f "$EXGINE_ROOT/CMakeLists.txt"
-          gradle --no-daemon --stacktrace :app:assembleDebug
+          gradle --no-daemon --stacktrace --info :app:assembleDebug 2>&1 | tee /tmp/gradle-build.log
+
+      - name: Dump native build logs on failure
+        if: failure()
+        working-directory: exworld/platform/android
+        run: |
+          echo "==== gradle tail ===="
+          tail -200 /tmp/gradle-build.log || true
+          echo "==== cmakeError logs ===="
+          find . -name 'cmake*.log' -o -name '*.cpp.o.d' 2>/dev/null | head
+          find app/.cxx -type f \( -name '*.txt' -o -name '*.log' \) 2>/dev/null | head -40
+          find app/.cxx -name 'CMakeError.log' -exec echo '--- {} ---' \; -exec cat {} \; 2>/dev/null || true
+          find app/.cxx -name 'CMakeOutput.log' -exec tail -80 {} \; 2>/dev/null || true
+          find app/build -name '*.log' 2>/dev/null | head -20
 
       - name: Verify native libs inside APK
         working-directory: exworld/platform/android
@@ -89,17 +103,13 @@ jobs:
           test -n "$APK"
           echo "APK: $APK ($(du -h "$APK" | cut -f1))"
           unzip -l "$APK" | tee /tmp/apk-list.txt
-          # Must contain native library
           grep -E 'lib/.*/libexworld_android\.so' /tmp/apk-list.txt
-          # Must contain game content
           grep -E 'assets/project\.exg' /tmp/apk-list.txt
-          # Report .so sizes
           unzip -l "$APK" | grep '\.so' || true
           SIZE=$(stat -c%s "$APK")
           echo "APK bytes=$SIZE"
-          # Warn if absurdly small (< 500KB almost certainly missing native code)
           if [ "$SIZE" -lt 500000 ]; then
-            echo "APK is suspiciously small — native link may have failed"
+            echo "APK suspiciously small"
             exit 1
           fi
 
