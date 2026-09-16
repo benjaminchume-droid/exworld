@@ -1,0 +1,35 @@
+plugins { id 'com.android.application' }
+
+def exgineRoot = project.findProperty('EXGINE_ROOT') ?: "${rootDir.parentFile.parentFile}/exgine"
+
+android {
+    namespace 'com.exworld.firstlight'
+    compileSdk 35
+    ndkVersion '27.2.12479018'
+
+    defaultConfig {
+        applicationId 'com.exworld.firstlight'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+        externalNativeBuild {
+            cmake {
+                arguments "-DEXGINE_ROOT=${exgineRoot}", '-DEXGINE_BUILD_DEMO=OFF', '-DEXGINE_BUILD_TESTS=OFF'
+            }
+        }
+    }
+
+    buildTypes {
+        release { minifyEnabled false; debuggable false }
+        debug { debuggable true }
+    }
+
+    sourceSets {
+        main { assets.srcDirs = ['../../content'] }
+    }
+
+    externalNativeBuild {
+        cmake { path file('../CMakeLists.txt'); version '3.22.1' }
+    }
+}
