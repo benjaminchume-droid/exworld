@@ -30,7 +30,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # Same pattern as the working EXGINE android.yml
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
@@ -39,35 +38,20 @@ jobs:
       - name: Install Android toolchain
         run: |
           set -euo pipefail
-          echo "ANDROID_HOME=${ANDROID_HOME:-}"
-          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-}"
-          which sdkmanager || true
-          sdkmanager --list_installed || true
-
-          # Accept licenses non-interactively
           yes | sdkmanager --licenses >/tmp/sdk-licenses.log 2>&1 || true
-
           sdkmanager --install \
             "platforms;android-35" \
             "build-tools;35.0.0" \
             "ndk;27.2.12479018" \
             "cmake;3.22.1"
 
-          # Resolve SDK root for later steps
           SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
           if [ -z "$SDK_ROOT" ]; then
-            # setup-android usually exports ANDROID_HOME; fallback common path
-            if [ -d "$HOME/Android/Sdk" ]; then
-              SDK_ROOT="$HOME/Android/Sdk"
-            elif [ -d "/usr/local/lib/android/sdk" ]; then
-              SDK_ROOT="/usr/local/lib/android/sdk"
-            fi
+            [ -d "$HOME/Android/Sdk" ] && SDK_ROOT="$HOME/Android/Sdk"
+            [ -d "/usr/local/lib/android/sdk" ] && SDK_ROOT="/usr/local/lib/android/sdk"
           fi
-          echo "SDK_ROOT=$SDK_ROOT"
-          test -n "$SDK_ROOT"
-          test -d "$SDK_ROOT"
-
           NDK_DIR="$SDK_ROOT/ndk/27.2.12479018"
+          test -d "$SDK_ROOT"
           test -d "$NDK_DIR"
 
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
@@ -84,11 +68,9 @@ jobs:
       - name: Write local.properties
         working-directory: exworld/platform/android
         run: |
-          set -euo pipefail
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           echo "ndk.dir=$ANDROID_NDK_HOME" >> local.properties
           cat local.properties
-          test -f "${{ github.workspace }}/exgine/CMakeLists.txt"
 
       - name: Build debug APK
         working-directory: exworld/platform/android
@@ -96,26 +78,30 @@ jobs:
           EXGINE_ROOT: ${{ github.workspace }}/exgine
         run: |
           set -euo pipefail
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
-          echo "EXGINE_ROOT=$EXGINE_ROOT"
-          test -d "$ANDROID_HOME"
-          test -d "$ANDROID_NDK_HOME"
           test -f "$EXGINE_ROOT/CMakeLists.txt"
           gradle --no-daemon --stacktrace :app:assembleDebug
 
-      - name: Locate APK
+      - name: Verify native libs inside APK
         working-directory: exworld/platform/android
         run: |
           set -euo pipefail
-          APK=$(find app/build/outputs/apk/debug -name '*.apk' 2>/dev/null | head -n 1 || true)
-          if [ -z "$APK" ]; then
-            echo "No debug APK found"
-            find app/build -type f \( -name '*.apk' -o -name '*.so' \) 2>/dev/null | head -80 || true
+          APK=$(find app/build/outputs/apk/debug -name '*.apk' | head -n 1)
+          test -n "$APK"
+          echo "APK: $APK ($(du -h "$APK" | cut -f1))"
+          unzip -l "$APK" | tee /tmp/apk-list.txt
+          # Must contain native library
+          grep -E 'lib/.*/libexworld_android\.so' /tmp/apk-list.txt
+          # Must contain game content
+          grep -E 'assets/project\.exg' /tmp/apk-list.txt
+          # Report .so sizes
+          unzip -l "$APK" | grep '\.so' || true
+          SIZE=$(stat -c%s "$APK")
+          echo "APK bytes=$SIZE"
+          # Warn if absurdly small (< 500KB almost certainly missing native code)
+          if [ "$SIZE" -lt 500000 ]; then
+            echo "APK is suspiciously small — native link may have failed"
             exit 1
           fi
-          echo "Found APK: $APK"
-          ls -lh "$APK"
 
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4

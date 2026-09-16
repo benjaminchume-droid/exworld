@@ -1,12 +1,10 @@
 // EXWORLD Android NativeActivity entry
-// Boots ExWorldGame, presents via EXGINE AndroidEglPresenter,
-// maps touch + key events into InputSystem.
-
 #include "exworld/game.hpp"
 
 #include "exgine/android.hpp"
 #include "exgine/android_audio.hpp"
 #include "exgine/mobile.hpp"
+#include "exgine/render.hpp"
 
 #include <android/asset_manager.h>
 #include <android/input.h>
@@ -22,6 +20,10 @@
 namespace {
 
 constexpr const char* kTag = "EXWORLD";
+
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, kTag, __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, kTag, __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, kTag, __VA_ARGS__)
 
 std::uint64_t monotonic_time_ns() {
     timespec v{};
@@ -41,10 +43,8 @@ bool read_asset(AAssetManager* m, std::string_view path, std::string& out) {
     return got >= 0 && static_cast<std::size_t>(got) == n;
 }
 
-// Content is packaged under assets/ (project.exg, scenes/...)
 bool load_asset(AAssetManager* m, std::string_view path, std::string& out) {
     if (read_asset(m, path, out)) return true;
-    // Fallback prefixes
     std::string alt = "content/";
     alt += path;
     return read_asset(m, alt, out);
@@ -60,6 +60,8 @@ struct AppState {
     int height = 720;
     double previous_time = 0;
     bool started = false;
+    bool boot_ok = false;
+    std::string boot_error;
 };
 
 void feed_touch(AppState* s, const AInputEvent* e, std::size_t i, bool down) {
@@ -81,8 +83,6 @@ int32_t handle_input(android_app* app, AInputEvent* input) {
         if (action != AKEY_EVENT_ACTION_DOWN && action != AKEY_EVENT_ACTION_UP) return 0;
         const int code = AKeyEvent_getKeyCode(input);
         const bool down = action == AKEY_EVENT_ACTION_DOWN;
-
-        // Map common Android keycodes to our InputSystem letter codes
         int mapped = 0;
         switch (code) {
         case AKEYCODE_W: mapped = 'W'; break;
@@ -96,7 +96,6 @@ int32_t handle_input(android_app* app, AInputEvent* input) {
         case AKEYCODE_SHIFT_RIGHT: mapped = 16; break;
         case AKEYCODE_CTRL_LEFT:
         case AKEYCODE_CTRL_RIGHT: mapped = 17; break;
-        // Gamepad buttons
         case AKEYCODE_BUTTON_A: s->game->input().set_gamepad_button(0, down); return 1;
         case AKEYCODE_BUTTON_B: s->game->input().set_gamepad_button(1, down); return 1;
         case AKEYCODE_BUTTON_X: s->game->input().set_gamepad_button(2, down); return 1;
@@ -114,7 +113,6 @@ int32_t handle_input(android_app* app, AInputEvent* input) {
 
     if (AInputEvent_getType(input) != AINPUT_EVENT_TYPE_MOTION) return 0;
     if ((AInputEvent_getSource(input) & AINPUT_SOURCE_CLASS_POINTER) == 0) {
-        // Gamepad axes
         if ((AInputEvent_getSource(input) & AINPUT_SOURCE_JOYSTICK) != 0) {
             const float lx = AMotionEvent_getAxisValue(input, AMOTION_EVENT_AXIS_X, 0);
             const float ly = AMotionEvent_getAxisValue(input, AMOTION_EVENT_AXIS_Y, 0);
@@ -158,9 +156,11 @@ void handle_cmd(android_app* app, int32_t cmd) {
     switch (cmd) {
     case APP_CMD_START:
         s->mobile.on_start();
+        LOGI("APP_CMD_START");
         break;
     case APP_CMD_RESUME:
         s->mobile.on_resume();
+        LOGI("APP_CMD_RESUME");
         break;
     case APP_CMD_PAUSE:
         s->mobile.on_pause();
@@ -175,6 +175,9 @@ void handle_cmd(android_app* app, int32_t cmd) {
             s->mobile.on_surface_available();
             s->width = ANativeWindow_getWidth(app->window);
             s->height = ANativeWindow_getHeight(app->window);
+            LOGI("surface %dx%d", s->width, s->height);
+        } else {
+            LOGE("presenter.attach failed");
         }
         break;
     case APP_CMD_TERM_WINDOW:
@@ -194,31 +197,57 @@ void handle_cmd(android_app* app, int32_t cmd) {
     }
 }
 
-} // namespace
-
-void android_main(android_app* app) {
-    AppState state;
-    state.assets = app->activity ? app->activity->assetManager : nullptr;
-
+bool boot_game(AppState& state) {
     auto loader = [&state](std::string_view path, std::string& out) -> bool {
+        // Strip leading ./ or content/
+        std::string p(path);
+        if (p.rfind("./", 0) == 0) p = p.substr(2);
+        if (p.rfind("content/", 0) == 0) p = p.substr(8);
+        if (load_asset(state.assets, p, out)) return true;
         return load_asset(state.assets, path, out);
     };
 
     state.game = std::make_unique<exworld::ExWorldGame>(loader);
 
-    // Boot from packaged assets (content/project.exg copied as assets root)
-    if (!state.game->open("")) {
-        // open() looks for project.exg via loader; pass empty root so loader uses asset paths
-        std::string manifest;
-        if (!load_asset(state.assets, "project.exg", manifest) ||
-            !state.game->engine().open_project(manifest)) {
-            __android_log_print(ANDROID_LOG_ERROR, kTag, "Failed to open EXWORLD project");
-            return;
-        }
+    // Prefer explicit asset open — do not depend on filesystem paths
+    std::string manifest;
+    if (!load_asset(state.assets, "project.exg", manifest)) {
+        state.boot_error = "assets/project.exg missing from APK";
+        LOGE("%s", state.boot_error.c_str());
+        return false;
+    }
+    LOGI("project.exg loaded (%zu bytes)", manifest.size());
+
+    // open_from_manifest uses the asset loader for scenes
+    if (!state.game->open_from_manifest(manifest)) {
+        state.boot_error = "ExWorldGame::open_from_manifest failed";
+        LOGE("%s", state.boot_error.c_str());
+        return false;
+    }
+
+    LOGI("EXWORLD project open OK");
+    return true;
+}
+
+} // namespace
+
+void android_main(android_app* app) {
+    LOGI("android_main enter");
+
+    AppState state;
+    state.assets = app->activity ? app->activity->assetManager : nullptr;
+    if (!state.assets) {
+        LOGE("No AAssetManager — cannot load content");
+    }
+
+    state.boot_ok = boot_game(state);
+    if (!state.boot_ok) {
+        LOGE("Boot failed: %s — keeping process alive for logcat", state.boot_error.c_str());
+        // DO NOT return — returning kills the app immediately (what you saw)
     }
 
     if (!state.audio.start()) {
-        __android_log_print(ANDROID_LOG_WARN, kTag, "AAudio unavailable; continuing without backend");
+        LOGW("AAudio unavailable; continuing without backend");
     }
 
     app->userData = &state;
@@ -238,10 +267,12 @@ void android_main(android_app* app) {
                 state.mobile.on_surface_lost();
                 state.audio.stop();
                 state.presenter.detach();
+                LOGI("android_main exit (destroy)");
                 return;
             }
         }
 
+        if (!state.boot_ok) continue; // stay alive, black screen, check logcat
         if (!state.mobile.renderable() || !state.presenter.ready()) continue;
 
         const double now = static_cast<double>(monotonic_time_ns()) / 1000000000.0;
@@ -255,16 +286,21 @@ void android_main(android_app* app) {
 
         if (!state.started) {
             state.started = state.game->start();
-            if (!state.started) continue;
+            if (!state.started) {
+                LOGE("game->start() failed");
+                continue;
+            }
+            LOGI("game started");
         }
 
-        if (!state.game->update(dt)) continue;
+        if (!state.game->update(dt)) {
+            LOGW("game->update failed");
+            continue;
+        }
 
-        // Present through EXGINE GLES path
-        exgine::RenderFrame frame;
-        exgine::RenderResult result;
-        if (state.game->build_frame(frame, result) && result.success) {
-            (void)state.presenter.present(frame);
+        // Real GLES path (not Headless)
+        if (!state.game->present(state.presenter, state.width, state.height)) {
+            // soft fail — keep looping
         }
     }
 }

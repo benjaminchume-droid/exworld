@@ -2,6 +2,7 @@
 
 #include "exgine/playable.hpp"
 #include "exgine/runtime.hpp"
+#include "exgine/android.hpp"
 
 #include "exworld/player.hpp"
 #include "exworld/vehicle.hpp"
@@ -25,17 +26,23 @@ class ExWorldGame {
 public:
     explicit ExWorldGame(exgine::ProjectSourceLoader loader = {});
 
+    // Desktop / path-based
     [[nodiscard]] bool open(std::string_view content_root = "content");
+
+    // Android / asset-based: manifest already loaded from AAssetManager
+    [[nodiscard]] bool open_from_manifest(std::string_view manifest_text);
+
     [[nodiscard]] bool start() noexcept;
 
     [[nodiscard]] bool update(double dt) noexcept;
     [[nodiscard]] bool build_frame(exgine::RenderFrame& frame, exgine::RenderResult& result) noexcept;
 
-    // Input
-    InputSystem& input() noexcept { return input_; }
-    void set_input(const PlayerInput& input) noexcept; // direct override / tests
+    // Real device present (OpenGLES)
+    [[nodiscard]] bool present(exgine::AndroidEglPresenter& presenter, int width, int height) noexcept;
 
-    // Save / load
+    InputSystem& input() noexcept { return input_; }
+    void set_input(const PlayerInput& input) noexcept;
+
     [[nodiscard]] std::vector<std::uint8_t> save_game() const;
     [[nodiscard]] bool load_game(const std::vector<std::uint8_t>& bytes);
     [[nodiscard]] bool save_to_file(const std::string& path) const;
@@ -47,7 +54,6 @@ public:
     [[nodiscard]] PoliceAI& police() noexcept { return police_; }
     [[nodiscard]] GameCamera& camera() noexcept { return camera_; }
     [[nodiscard]] InteriorNavigator& interiors() noexcept { return interiors_; }
-
     [[nodiscard]] exgine::PlayableGame& engine() noexcept { return engine_; }
 
 private:

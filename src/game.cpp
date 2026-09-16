@@ -1,5 +1,7 @@
 #include "exworld/game.hpp"
 
+#include "exgine/render.hpp"
+
 #include <filesystem>
 #include <iostream>
 
@@ -42,14 +44,25 @@ bool ExWorldGame::open(std::string_view content_root) {
         std::cerr << "EXWORLD: project.exg not found\n";
         return false;
     }
+    return open_from_manifest(manifest);
+}
 
-    if (!engine_.open_project(manifest)) {
-        std::cerr << "EXWORLD: failed to open project\n";
+bool ExWorldGame::open_from_manifest(std::string_view manifest_text) {
+    ready_ = configured_ = false;
+
+    if (!engine_.open_project(manifest_text)) {
+        std::cerr << "EXWORLD: PlayableGame::open_project failed\n";
         return false;
     }
 
-    if (!configure_systems()) return false;
-    if (!spawn_world_content()) return false;
+    if (!configure_systems()) {
+        std::cerr << "EXWORLD: configure_systems failed\n";
+        return false;
+    }
+    if (!spawn_world_content()) {
+        std::cerr << "EXWORLD: spawn_world_content failed\n";
+        return false;
+    }
 
     configured_ = true;
     return engine_.show_menu();
@@ -70,7 +83,7 @@ bool ExWorldGame::configure_systems() {
     auto player_id = find_by_name(runtime, "Player");
     if (!player_id) player_id = find_by_kind(runtime, exgine::NodeKind::Player);
     if (!player_id) {
-        std::cerr << "EXWORLD: no Player entity\n";
+        std::cerr << "EXWORLD: no Player entity in scene\n";
         return false;
     }
 
@@ -92,7 +105,6 @@ bool ExWorldGame::configure_systems() {
     police_.clear();
     interiors_.clear();
     input_.reset();
-
     return true;
 }
 
@@ -108,58 +120,43 @@ bool ExWorldGame::spawn_world_content() {
         if (!e) continue;
 
         if (e->kind == exgine::NodeKind::Building) {
-            const int floors = 3;
-            const int rooms = 4;
             world_.register_building(
-                id,
-                {e->transform.x, e->transform.y, e->transform.z + 2.2f},
-                2.1f);
+                id, {e->transform.x, e->transform.y, e->transform.z + 2.2f}, 2.1f);
             interiors_.register_building(
-                id, floors, rooms,
-                {e->transform.x, e->transform.y, e->transform.z});
+                id, 3, 4, {e->transform.x, e->transform.y, e->transform.z});
         }
         if (e->kind == exgine::NodeKind::Vehicle) {
             vehicles_.register_vehicle(runtime, id, e->name, {});
         }
         if (e->kind == exgine::NodeKind::NPC) {
-            // Treat some NPCs as police units for wanted escalation
             police_.register_unit(id);
         }
     }
-
-    std::cout << "EXWORLD: buildings=" << world_.building_count()
-              << " vehicles=" << vehicles_.count()
-              << " police_units=" << police_.active_chasers() << "\n";
     return true;
 }
 
-void ExWorldGame::handle_interactions(float /*dt*/, exgine::Runtime& runtime) {
+void ExWorldGame::handle_interactions(float, exgine::Runtime& runtime) {
     PlayerInput in = use_forced_input_ ? forced_input_ : input_.poll();
     const auto pos = player_.position(runtime);
 
-    if (in.interact) {
-        if (player_.mode() == PlayerMode::OnFoot) {
-            auto veh = vehicles_.nearest_vehicle(pos, 3.5f, runtime);
-            if (veh != exgine::invalid_entity) {
-                const auto* seat = vehicles_.seat(veh);
-                const float dur = seat ? seat->enter_duration : 1.15f;
-                if (player_.try_enter_vehicle(veh, dur, runtime)) {
-                    animation_.play_enter_vehicle(dur);
-                    sound_.play_vehicle_enter(runtime);
-                    wanted_.on_crime(14.f);
-                    if (wanted_.level() >= WantedLevel::Level1)
-                        sound_.play_wanted_alert(runtime);
-                }
-            } else {
-                auto bld = world_.nearest_door(pos, 2.5f);
-                if (bld != exgine::invalid_entity) {
-                    if (player_.try_enter_building(bld, runtime)) {
-                        animation_.play_enter_building(0.85f);
-                        sound_.play_door(true, false, runtime);
-                        interiors_.activate(bld, runtime);
-                        if (auto* d = world_.door_mut(bld)) d->interior_active = true;
-                    }
-                }
+    if (in.interact && player_.mode() == PlayerMode::OnFoot) {
+        auto veh = vehicles_.nearest_vehicle(pos, 3.5f, runtime);
+        if (veh != exgine::invalid_entity) {
+            const auto* seat = vehicles_.seat(veh);
+            const float dur = seat ? seat->enter_duration : 1.15f;
+            if (player_.try_enter_vehicle(veh, dur, runtime)) {
+                animation_.play_enter_vehicle(dur);
+                sound_.play_vehicle_enter(runtime);
+                wanted_.on_crime(14.f);
+                if (wanted_.level() >= WantedLevel::Level1)
+                    sound_.play_wanted_alert(runtime);
+            }
+        } else {
+            auto bld = world_.nearest_door(pos, 2.5f);
+            if (bld != exgine::invalid_entity && player_.try_enter_building(bld, runtime)) {
+                animation_.play_enter_building(0.85f);
+                sound_.play_door(true, false, runtime);
+                interiors_.activate(bld, runtime);
             }
         }
     }
@@ -171,11 +168,9 @@ void ExWorldGame::handle_interactions(float /*dt*/, exgine::Runtime& runtime) {
             if (player_.try_exit_vehicle(dur, runtime)) {
                 animation_.play_exit_vehicle(dur);
                 sound_.play_vehicle_exit(runtime);
-                // Release possession
                 auto& dyn = runtime.vehicle_dynamics();
                 auto it = dyn.find(player_.current_vehicle());
-                if (it != dyn.end() && it->second)
-                    (void)it->second->possess(false);
+                if (it != dyn.end() && it->second) (void)it->second->possess(false);
             }
         } else if (player_.mode() == PlayerMode::InsideBuilding) {
             if (player_.try_exit_building(runtime)) {
@@ -190,12 +185,9 @@ void ExWorldGame::handle_interactions(float /*dt*/, exgine::Runtime& runtime) {
 void ExWorldGame::update_vehicle_possession(float dt, const PlayerInput& in,
                                             exgine::Runtime& runtime) {
     if (player_.mode() != PlayerMode::InVehicle) return;
-
     const float throttle = std::max(0.f, in.move_z);
     const float brake = in.move_z < -0.1f ? -in.move_z : (in.crouch ? 1.f : 0.f);
-    const float steer = in.move_x;
-
-    vehicles_.update_driven(player_.current_vehicle(), throttle, steer, brake, dt, runtime);
+    vehicles_.update_driven(player_.current_vehicle(), throttle, in.move_x, brake, dt, runtime);
 }
 
 void ExWorldGame::update_camera(exgine::Runtime& runtime) {
@@ -210,18 +202,9 @@ void ExWorldGame::update_camera(exgine::Runtime& runtime) {
 
 bool ExWorldGame::update(double dt) noexcept {
     if (!ready_ || dt < 0.0) return false;
-
     time_ += dt;
     auto& runtime = engine_.session().game().runtime();
-
     PlayerInput in = use_forced_input_ ? forced_input_ : input_.poll();
-
-    // Soft auto-walk only when no real input is present (validation path)
-    if (!use_forced_input_ &&
-        in.move_x == 0.f && in.move_z == 0.f &&
-        input_.last_device() == InputDevice::Keyboard) {
-        // leave still if truly no keys; tests inject via set_input
-    }
 
     handle_interactions(static_cast<float>(dt), runtime);
     update_vehicle_possession(static_cast<float>(dt), in, runtime);
@@ -245,16 +228,28 @@ bool ExWorldGame::update(double dt) noexcept {
     police_.update(static_cast<float>(dt), pos, wanted_.level(), runtime);
     update_camera(runtime);
 
-    use_forced_input_ = false; // one-shot
+    use_forced_input_ = false;
     return engine_.update(dt);
 }
 
 bool ExWorldGame::build_frame(exgine::RenderFrame& frame, exgine::RenderResult& result) noexcept {
     if (!ready_) return false;
+    // Headless path for desktop validation only
     exgine::Renderer renderer({exgine::RenderBackend::Headless, 1280, 720, true, true, 256, 128});
     if (!renderer.build_frame(engine_.session().game().runtime(), frame)) return false;
     result = renderer.submit(frame);
     return result.success;
+}
+
+bool ExWorldGame::present(exgine::AndroidEglPresenter& presenter, int width, int height) noexcept {
+    if (!ready_) return false;
+    const int w = width > 0 ? width : 1280;
+    const int h = height > 0 ? height : 720;
+    exgine::RenderFrame frame;
+    exgine::Renderer renderer({exgine::RenderBackend::OpenGLES, w, h, true, true, 256, 128});
+    if (!renderer.build_frame(engine_.session().game().runtime(), frame)) return false;
+    if (!renderer.validate(frame)) return false;
+    return presenter.present(frame);
 }
 
 std::vector<std::uint8_t> ExWorldGame::save_game() const {
@@ -262,18 +257,15 @@ std::vector<std::uint8_t> ExWorldGame::save_game() const {
 }
 
 bool ExWorldGame::load_game(const std::vector<std::uint8_t>& bytes) {
-    return saves_.load(bytes, player_, wanted_, time_,
-                       engine_.session().game().runtime());
+    return saves_.load(bytes, player_, wanted_, time_, engine_.session().game().runtime());
 }
 
 bool ExWorldGame::save_to_file(const std::string& path) const {
-    return saves_.save_to_file(path, player_, wanted_, time_,
-                               engine_.session().game().runtime());
+    return saves_.save_to_file(path, player_, wanted_, time_, engine_.session().game().runtime());
 }
 
 bool ExWorldGame::load_from_file(const std::string& path) {
-    return saves_.load_from_file(path, player_, wanted_, time_,
-                                 engine_.session().game().runtime());
+    return saves_.load_from_file(path, player_, wanted_, time_, engine_.session().game().runtime());
 }
 
 } // namespace exworld
