@@ -50,11 +50,11 @@ exgine::EntityId find_player_entity(exgine::Runtime& r) {
 
 bool ensure_render_basics(exgine::Runtime& runtime, const exgine::Vec3& focus) {
     exgine::Camera cam;
-    cam.position = {focus.x - 4.f, focus.y + 2.5f, focus.z + 4.f};
-    cam.rotation = {-0.25f, 0.6f, 0.f};
-    cam.vertical_fov_degrees = 58.f;
-    cam.near_plane = 0.08f;
-    cam.far_plane = 4000.f;
+    cam.position = {focus.x - 7.f, focus.y + 3.2f, focus.z + 7.f};
+    cam.rotation = {-0.28f, 0.55f, 0.f};
+    cam.vertical_fov_degrees = 55.f;
+    cam.near_plane = 0.1f;
+    cam.far_plane = 5000.f;
     if (!runtime.set_main_camera(cam)) {
         std::cerr << "EXWORLD: set_main_camera failed\n";
         return false;
@@ -156,6 +156,8 @@ bool ExWorldGame::configure_systems() {
         std::cerr << "EXWORLD: AnimationDriver unavailable (ok)\n";
     }
 
+    (void)visuals_.bootstrap(runtime, player_id);
+
     sound_.initialize(runtime);
     world_.bootstrap(runtime);
     wanted_.reset();
@@ -227,7 +229,6 @@ bool ExWorldGame::spawn_world_content() {
         }
         if (e->kind == exgine::NodeKind::Vehicle)
             vehicles_.register_vehicle(runtime, id, e->name, {});
-        // Cops: name prefix Cop_; other NPCs stay world flavor (police AI still tracks Cop_*)
         if (e->kind == exgine::NodeKind::NPC) {
             if (e->name.rfind("Cop_", 0) == 0)
                 police_.register_unit(id);
@@ -331,6 +332,7 @@ bool ExWorldGame::update(double dt) noexcept {
         update_camera(runtime);
         update_region(pos);
         hud_.update(player_, wanted_, player_.motion().speed, region_name_);
+        visuals_.update_hud_markers(runtime, camera_.camera(), hud_.layout(), 1280, 720);
     }
 
     wanted_.update(static_cast<float>(dt), runtime);
