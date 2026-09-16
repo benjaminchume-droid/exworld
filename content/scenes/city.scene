@@ -1,4 +1,5 @@
-world City {
+game EXWORLD {
+  world City {
     terrain CityTerrain { amplitude = 14 seed = 90210 chunk_size = 32 resolution = 33 sea_level = -2 }
 
     player Sebastian { x = 0 y = 1.1 z = 0 }
@@ -22,4 +23,5 @@ world City {
     npc Pedestrian_02 { x = -5 y = 1 z = -3 }
     npc Pedestrian_03 { x = 10 y = 1 z = -8 }
     npc Pedestrian_04 { x = -12 y = 1 z = 6 }
+  }
 }
