@@ -2,7 +2,7 @@
 
 #include "exgine/android.hpp"
 #include "exgine/render.hpp"
-#include "exgine/materials.hpp"
+#include "exgine/material.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -49,7 +49,6 @@ exgine::EntityId find_player_entity(exgine::Runtime& r) {
 }
 
 bool ensure_render_basics(exgine::Runtime& runtime, const exgine::Vec3& focus) {
-    // Camera (required by Renderer::build_frame)
     exgine::Camera cam;
     cam.position = {focus.x - 4.f, focus.y + 2.5f, focus.z + 4.f};
     cam.rotation = {-0.25f, 0.6f, 0.f};
@@ -61,7 +60,6 @@ bool ensure_render_basics(exgine::Runtime& runtime, const exgine::Vec3& focus) {
         return false;
     }
 
-    // Sun
     exgine::Light sun;
     sun.type = exgine::LightType::Directional;
     sun.direction = {-0.45f, -0.78f, -0.2f};
@@ -69,7 +67,6 @@ bool ensure_render_basics(exgine::Runtime& runtime, const exgine::Vec3& focus) {
     sun.intensity = 4.f;
     (void)runtime.create_light(sun);
 
-    // Materials so geometry parts resolve (build_frame returns false on missing material)
     (void)runtime.define_material(exgine::make_real_world_material("concrete", 11));
     (void)runtime.define_material(exgine::make_real_world_material("asphalt", 22));
     (void)runtime.define_material(exgine::make_real_world_material("metal", 33));
@@ -111,7 +108,7 @@ bool ExWorldGame::open_from_manifest(std::string_view manifest_text) {
         return false;
     }
 
-    (void)engine_.show_menu(); // may fail if already Menu — ignore
+    (void)engine_.show_menu();
 
     if (!configure_systems()) {
         std::cerr << "EXWORLD: configure_systems soft-failed (continuing)\n";
@@ -306,7 +303,6 @@ bool ExWorldGame::present(exgine::AndroidEglPresenter& presenter, int width, int
     exgine::Renderer renderer({exgine::RenderBackend::OpenGLES, w, h, true, true, 256, 128});
     auto& rt = engine_.session().game().runtime();
     if (!renderer.build_frame(rt, frame)) {
-        // Last-resort: still try a camera-only frame so EGL keeps swapping
         (void)ensure_render_basics(rt, player_.valid() ? player_.position(rt) : exgine::Vec3{0, 2, 0});
         if (!renderer.build_frame(rt, frame)) return false;
     }
