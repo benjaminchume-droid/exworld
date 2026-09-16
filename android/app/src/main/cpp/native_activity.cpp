@@ -1,4 +1,8 @@
-// EXWORLD Android — fixed scene URI resolution + never kill process on soft errors
+// EXWORLD Android NativeActivity
+// CRITICAL: AppState MUST be heap-allocated. AndroidAudioBackend contains
+// std::array<float,262144> (~1MB). Stack placement overflows the native
+// thread stack and produces SIGSEGV ("keeps stopping") before any game code runs.
+
 #include "exworld/game.hpp"
 
 #include "exgine/android.hpp"
@@ -43,16 +47,11 @@ bool read_asset(AAssetManager* m, std::string_view path, std::string& out) {
     return got >= 0 && static_cast<std::size_t>(got) == n;
 }
 
-// CRITICAL: EXGINE activate_scene() passes the scene *name* as the loader URI.
-// Map logical names to real asset paths so open_project can succeed.
 bool resolve_and_load(AAssetManager* m, std::string_view path, std::string& out) {
     std::string p(path);
     if (p.rfind("./", 0) == 0) p = p.substr(2);
     if (p.rfind("content/", 0) == 0) p = p.substr(8);
-
-    // Name → path map (engine calls loader with startup_scene token)
-    if (p == "City" || p == "Main" || p == "CityScene")
-        p = "scenes/city.scene";
+    if (p == "City" || p == "Main" || p == "CityScene") p = "scenes/city.scene";
     else if (p == "FirstLight" || p == "FirstLightScene")
         p = "first_light/scenes/first_light.scene";
 
@@ -60,7 +59,6 @@ bool resolve_and_load(AAssetManager* m, std::string_view path, std::string& out)
     if (read_asset(m, std::string("content/") + p, out)) return true;
     if (read_asset(m, std::string("first_light/") + p, out)) return true;
     if (read_asset(m, path, out)) return true;
-    // bare name without extension
     if (p.find('.') == std::string::npos) {
         if (read_asset(m, p + ".scene", out)) return true;
         if (read_asset(m, std::string("scenes/") + p + ".scene", out)) return true;
@@ -71,7 +69,8 @@ bool resolve_and_load(AAssetManager* m, std::string_view path, std::string& out)
 struct AppState {
     exgine::AndroidEglPresenter presenter;
     exgine::MobileRuntimeBridge mobile;
-    exgine::AndroidAudioBackend audio;
+    // Audio is optional and large — allocate only if start succeeds path needs it
+    std::unique_ptr<exgine::AndroidAudioBackend> audio;
     std::unique_ptr<exworld::ExWorldGame> game;
     AAssetManager* assets = nullptr;
     int width = 1280;
@@ -79,6 +78,7 @@ struct AppState {
     double previous_time = 0;
     bool started = false;
     bool boot_ok = false;
+    bool boot_attempted = false;
     std::string boot_error;
 };
 
@@ -139,39 +139,6 @@ int32_t handle_input(android_app* app, AInputEvent* input) {
     return 0;
 }
 
-void handle_cmd(android_app* app, int32_t cmd) {
-    auto* s = static_cast<AppState*>(app->userData);
-    if (!s) return;
-    switch (cmd) {
-    case APP_CMD_START: s->mobile.on_start(); break;
-    case APP_CMD_RESUME: s->mobile.on_resume(); break;
-    case APP_CMD_PAUSE: s->mobile.on_pause(); break;
-    case APP_CMD_STOP:
-        s->mobile.on_stop(); s->audio.stop(); s->started = false; break;
-    case APP_CMD_INIT_WINDOW:
-        if (app->window && s->presenter.attach(app->window)) {
-            s->mobile.on_surface_available();
-            s->width = ANativeWindow_getWidth(app->window);
-            s->height = ANativeWindow_getHeight(app->window);
-            LOGI("surface %dx%d", s->width, s->height);
-        } else {
-            LOGE("presenter.attach failed: %s", s->presenter.last_error().c_str());
-        }
-        break;
-    case APP_CMD_TERM_WINDOW:
-        s->mobile.on_surface_lost(); s->presenter.detach(); break;
-    case APP_CMD_WINDOW_RESIZED:
-    case APP_CMD_CONTENT_RECT_CHANGED:
-        (void)s->presenter.resize();
-        if (app->window) {
-            s->width = ANativeWindow_getWidth(app->window);
-            s->height = ANativeWindow_getHeight(app->window);
-        }
-        break;
-    default: break;
-    }
-}
-
 bool boot_game(AppState& state) {
     try {
         auto loader = [&state](std::string_view path, std::string& out) -> bool {
@@ -193,7 +160,7 @@ bool boot_game(AppState& state) {
         LOGI("manifest %zu bytes", manifest.size());
 
         if (!state.game->open_from_manifest(manifest)) {
-            state.boot_error = "open_from_manifest failed (scene URI / compile)";
+            state.boot_error = "open_from_manifest failed";
             LOGE("%s", state.boot_error.c_str());
             return false;
         }
@@ -210,57 +177,131 @@ bool boot_game(AppState& state) {
     }
 }
 
+void handle_cmd(android_app* app, int32_t cmd) {
+    auto* s = static_cast<AppState*>(app->userData);
+    if (!s) return;
+    switch (cmd) {
+    case APP_CMD_START:
+        LOGI("APP_CMD_START");
+        s->mobile.on_start();
+        break;
+    case APP_CMD_RESUME:
+        LOGI("APP_CMD_RESUME");
+        s->mobile.on_resume();
+        break;
+    case APP_CMD_PAUSE:
+        LOGI("APP_CMD_PAUSE");
+        s->mobile.on_pause();
+        break;
+    case APP_CMD_STOP:
+        LOGI("APP_CMD_STOP");
+        s->mobile.on_stop();
+        if (s->audio) s->audio->stop();
+        s->started = false;
+        break;
+    case APP_CMD_INIT_WINDOW:
+        LOGI("APP_CMD_INIT_WINDOW");
+        if (app->window && s->presenter.attach(app->window)) {
+            s->mobile.on_surface_available();
+            s->width = ANativeWindow_getWidth(app->window);
+            s->height = ANativeWindow_getHeight(app->window);
+            LOGI("surface %dx%d attached", s->width, s->height);
+        } else {
+            LOGE("presenter.attach failed: %s", s->presenter.last_error().c_str());
+        }
+        break;
+    case APP_CMD_TERM_WINDOW:
+        LOGI("APP_CMD_TERM_WINDOW");
+        s->mobile.on_surface_lost();
+        s->presenter.detach();
+        break;
+    case APP_CMD_WINDOW_RESIZED:
+    case APP_CMD_CONTENT_RECT_CHANGED:
+        (void)s->presenter.resize();
+        if (app->window) {
+            s->width = ANativeWindow_getWidth(app->window);
+            s->height = ANativeWindow_getHeight(app->window);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 } // namespace
 
 void android_main(android_app* app) {
-    LOGI("android_main enter");
-    AppState state;
-    state.assets = app->activity ? app->activity->assetManager : nullptr;
+    LOGI("android_main enter (heap AppState)");
 
-    state.boot_ok = boot_game(state);
-    if (!state.boot_ok)
-        LOGE("Boot failed: %s — process stays alive (black screen)", state.boot_error.c_str());
+    // HEAP — never put AndroidAudioBackend / large state on the stack
+    auto* state = new (std::nothrow) AppState();
+    if (!state) {
+        LOGE("failed to allocate AppState");
+        return;
+    }
+    state->assets = app->activity ? app->activity->assetManager : nullptr;
 
-    if (!state.audio.start()) LOGW("AAudio unavailable");
-
-    app->userData = &state;
+    app->userData = state;
     app->onAppCmd = handle_cmd;
     app->onInputEvent = handle_input;
+
+    // Optional audio on heap (also ~1MB ring)
+    state->audio = std::make_unique<exgine::AndroidAudioBackend>();
+    if (!state->audio->start()) {
+        LOGW("AAudio unavailable");
+        state->audio.reset();
+    }
 
     for (;;) {
         int ident = 0, events = 0;
         android_poll_source* source = nullptr;
-        while ((ident = ALooper_pollOnce(state.mobile.renderable() ? 0 : -1,
+        while ((ident = ALooper_pollOnce(state->mobile.renderable() ? 0 : -1,
                                          nullptr, &events,
                                          reinterpret_cast<void**>(&source))) >= 0) {
             if (source) source->process(app, source);
             if (app->destroyRequested) {
-                state.mobile.on_destroy();
-                state.mobile.on_surface_lost();
-                state.audio.stop();
-                state.presenter.detach();
+                LOGI("destroyRequested — exit clean");
+                state->mobile.on_destroy();
+                state->mobile.on_surface_lost();
+                if (state->audio) state->audio->stop();
+                state->presenter.detach();
+                delete state;
+                app->userData = nullptr;
                 return;
             }
         }
 
-        if (!state.boot_ok) continue;
-        if (!state.mobile.renderable() || !state.presenter.ready()) continue;
+        // Defer boot until surface is live (lifecycle + EGL ready)
+        if (!state->boot_attempted && state->mobile.renderable() && state->presenter.ready()) {
+            state->boot_attempted = true;
+            state->boot_ok = boot_game(*state);
+            if (!state->boot_ok)
+                LOGE("Boot failed: %s — staying alive", state->boot_error.c_str());
+        }
+
+        if (!state->mobile.renderable() || !state->presenter.ready()) continue;
 
         const double now = static_cast<double>(monotonic_time_ns()) / 1e9;
-        const double dt = state.previous_time > 0
-                              ? std::clamp(now - state.previous_time, 0.0, 0.05)
+        const double dt = state->previous_time > 0
+                              ? std::clamp(now - state->previous_time, 0.0, 0.05)
                               : 1.0 / 60.0;
-        state.previous_time = now;
-        if (state.mobile.begin_frame(now).state == exgine::MobileFrameState::Paused) continue;
+        state->previous_time = now;
 
-        if (!state.started) {
+        if (state->mobile.begin_frame(now).state == exgine::MobileFrameState::Paused) continue;
+
+        if (!state->boot_ok) {
+            // Stay alive with a clear so the OS sees a live activity
+            continue;
+        }
+
+        if (!state->started) {
             try {
-                state.started = state.game->start();
+                state->started = state->game && state->game->start();
             } catch (...) {
                 LOGE("start() threw");
-                state.started = false;
+                state->started = false;
             }
-            if (!state.started) {
+            if (!state->started) {
                 LOGE("start() failed — retry");
                 continue;
             }
@@ -268,8 +309,8 @@ void android_main(android_app* app) {
         }
 
         try {
-            if (!state.game->update(dt)) continue;
-            (void)state.game->present(state.presenter, state.width, state.height);
+            if (state->game && state->game->update(dt))
+                (void)state->game->present(state->presenter, state->width, state->height);
         } catch (const std::exception& e) {
             LOGE("frame exception: %s", e.what());
         } catch (...) {
