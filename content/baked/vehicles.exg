@@ -1,0 +1,13 @@
+unit = meters
+sedan_length = 4.50
+sedan_width = 1.85
+sedan_height = 1.45
+suv_length = 4.90
+suv_width = 1.95
+suv_height = 1.75
+sports_length = 4.30
+sports_width = 1.80
+sports_height = 1.25
+pickup_length = 5.40
+pickup_width = 1.95
+pickup_height = 1.85

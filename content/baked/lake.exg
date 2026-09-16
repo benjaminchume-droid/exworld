@@ -1,0 +1,7 @@
+region = LakeLeonida
+origin = 650,0,-520
+radius = 500
+water_level = -0.5
+shore_sand = 1
+seed = 90003
+biome = lake

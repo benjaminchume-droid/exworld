@@ -1,0 +1,9 @@
+# Baked ExAnimation clip ids (generated offline, played at runtime)
+clip = idle,2000,1.00,loop
+clip = walk,2001,0.80,loop
+clip = run,2002,0.55,loop
+clip = enter_vehicle,2101,1.15,oneshot
+clip = exit_vehicle,2102,0.95,oneshot
+clip = enter_building,2201,0.85,oneshot
+clip = exit_building,2202,0.75,oneshot
+source = exanimation_motion_catalog

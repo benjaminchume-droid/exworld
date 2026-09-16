@@ -1,0 +1,11 @@
+# Baked ExSound event graph ids
+event = footstep,1001
+event = door_open,1002
+event = door_close,1003
+event = engine_idle,1004
+event = engine_rev,1005
+event = wanted_alert,1006
+event = ambient_city,1007
+event = ambient_forest,1008
+event = ambient_water,1009
+source = exsound_procedural

@@ -1,0 +1,16 @@
+# EXWORLD baked package index (pre-generated in CI, shipped in APK)
+# Units: meters. Origin: Downtown plaza.
+package = downtown,baked/downtown.exg,1.0,city
+package = forest,baked/forest.exg,1.0,biome
+package = lake,baked/lake.exg,1.0,biome
+package = swamp,baked/swamp.exg,1.0,biome
+package = vehicles,baked/vehicles.exg,1.0,props
+package = animation,baked/animation.exg,1.0,anim
+package = sound,baked/sound.exg,1.0,audio
+scale = meters
+player_height = 1.80
+car_length = 4.50
+car_width = 1.85
+floor_height = 3.00
+block_size = 96.00
+stream_radius = 400

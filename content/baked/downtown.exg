@@ -1,0 +1,9 @@
+region = Downtown
+origin = 0,0,0
+radius = 250
+building_floors_min = 2
+building_floors_max = 12
+road_width = 8.0
+sidewalk = 2.5
+seed = 90001
+note = Pre-baked city block parameters consumed by runtime/world streamer

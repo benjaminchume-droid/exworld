@@ -1,0 +1,7 @@
+region = SouthMarsh
+origin = -420,0,-720
+radius = 450
+water_level = -0.2
+mud = 1
+seed = 90004
+biome = swamp
