@@ -13,7 +13,9 @@ if(NOT EXISTS "${EXGINE_ROOT}/CMakeLists.txt")
   message(FATAL_ERROR "EXGINE not found at ${EXGINE_ROOT}. Set -DEXGINE_ROOT=...")
 endif()
 
-if(NOT TARGET exgine)
+if(NOT TARGET exgine_core)
+  set(EXGINE_BUILD_DEMO OFF CACHE BOOL "" FORCE)
+  set(EXGINE_BUILD_TESTS OFF CACHE BOOL "" FORCE)
   add_subdirectory("${EXGINE_ROOT}" "${CMAKE_BINARY_DIR}/exgine" EXCLUDE_FROM_ALL)
 endif()
 
@@ -38,7 +40,7 @@ target_include_directories(exworld PRIVATE
   ${EXGINE_ROOT}/include
 )
 
-target_link_libraries(exworld PRIVATE exgine)
+target_link_libraries(exworld PRIVATE exgine_core)
 
 add_custom_command(TARGET exworld POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory

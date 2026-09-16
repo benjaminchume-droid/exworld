@@ -51,23 +51,25 @@ jobs:
         working-directory: exworld/platform/android
         env:
           EXGINE_ROOT: ${{ github.workspace }}/exgine
-          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/27.2.12479018
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
         run: |
+          echo "Workspace: ${{ github.workspace }}"
           echo "EXGINE_ROOT=$EXGINE_ROOT"
-          ls -la "$EXGINE_ROOT" | head
+          test -f "$EXGINE_ROOT/CMakeLists.txt"
+          test -d "$ANDROID_NDK_HOME"
           gradle --no-daemon :app:assembleDebug
 
       - name: Locate APK
-        id: apk
         working-directory: exworld/platform/android
         run: |
-          APK=$(find app/build/outputs/apk/debug -name '*.apk' | head -n 1)
+          APK=$(find app/build/outputs/apk/debug -name '*.apk' 2>/dev/null | head -n 1)
           if [ -z "$APK" ]; then
             echo "No debug APK found"
-            find app/build/outputs -type f || true
+            find app/build -type f -name '*.apk' -o -name '*.so' 2>/dev/null | head -50 || true
             exit 1
           fi
-          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
+          echo "Found APK: $APK"
           ls -lh "$APK"
 
       - name: Upload debug APK artifact

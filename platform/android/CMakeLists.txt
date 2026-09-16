@@ -8,14 +8,9 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# EXGINE is expected as a sibling checkout (CI clones both)
-# Layout in CI:
-#   work/
-#     exgine/
-#     exworld/   (this repo)
+# EXGINE sibling (CI clones both under workspace)
 set(EXGINE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../exgine" CACHE PATH "Path to EXGINE")
 if(NOT EXISTS "${EXGINE_ROOT}/CMakeLists.txt")
-  # Fallback: EXGINE_ROOT passed from Gradle / environment
   if(DEFINED ENV{EXGINE_ROOT} AND EXISTS "$ENV{EXGINE_ROOT}/CMakeLists.txt")
     set(EXGINE_ROOT "$ENV{EXGINE_ROOT}")
   else()
@@ -38,7 +33,6 @@ endif()
 add_library(exworld_android SHARED
   src/main/cpp/native_activity.cpp
   ${ANDROID_GLUE_SOURCE}
-  # Game sources
   ${EXWORLD_ROOT}/src/game.cpp
   ${EXWORLD_ROOT}/src/player.cpp
   ${EXWORLD_ROOT}/src/vehicle.cpp
@@ -62,8 +56,9 @@ target_include_directories(exworld_android PRIVATE
 target_compile_features(exworld_android PRIVATE cxx_std_20)
 target_compile_definitions(exworld_android PRIVATE EXWORLD_ANDROID=1)
 
+# EXGINE public library target is exgine_core
 target_link_libraries(exworld_android PRIVATE
-  exgine
+  exgine_core
   android
   log
   EGL

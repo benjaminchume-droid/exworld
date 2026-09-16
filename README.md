@@ -2,10 +2,9 @@
 
 GTA-style open-world game on [EXGINE](https://github.com/benjaminchume-droid/exgine).
 
-**100% procedural.** No authored glTF characters, no high-res texture packs, no sampled audio banks required.  
-ExAnimation + ExSound + EXGINE generate the world, characters, vehicles, motion and audio.
+**100% procedural.** No authored glTF characters, no high-res texture packs, no sampled audio banks required.
 
-## Status (v0.3)
+## Status (v0.3 + Android packaging)
 
 | System | State |
 |--------|--------|
@@ -17,50 +16,50 @@ ExAnimation + ExSound + EXGINE generate the world, characters, vehicles, motion 
 | Real input (keyboard / gamepad / touch) | Done |
 | Save / load (player + wanted) | Done |
 | Dense city + streaming | Done |
-| **Installable Android APK** | **Not yet** |
+| **Android NativeActivity + debug APK workflow** | **Done** |
 
-## APK reality check
+## Android debug APK
 
-The game is **not** at the installable APK stage yet.
+### CI (automatic)
 
-What exists:
-- Full native C++ game logic
-- EXGINE Android EGL / NativeActivity support (in the engine)
+Push to `main` or run the workflow manually:
 
-What is still missing for a real APK:
-- `exworld` Android Gradle module + NativeActivity entry
-- Wiring Android touch / lifecycle into `InputSystem`
-- CMake/Gradle packaging + signing
+**Actions → EXWORLD Android Debug APK → Run workflow**
 
-Expected size once packaged (still fully procedural):
+Artifact name: **`exworld-android-debug`**  
+Contains: `app-debug.apk` (installable debug build)
 
-| Build | Size |
-|-------|------|
-| Release stripped | **18\u201335 MB** |
-| Release + symbols | 40\u201360 MB |
-| Debug | 60\u201390 MB |
-
-## Build (desktop validation)
+### Local
 
 ```bash
+# Sibling layout required
 git clone https://github.com/benjaminchume-droid/exgine.git
 git clone https://github.com/benjaminchume-droid/exworld.git
-cd exworld
+
+cd exworld/platform/android
+# SDK 35, NDK 27.2.12479018, CMake 3.22.1, JDK 17
+export EXGINE_ROOT=../../exgine   # or absolute path
+gradle :app:assembleDebug
+
+# APK:
+# app/build/outputs/apk/debug/app-debug.apk
+```
+
+Install:
+
+```bash
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+Expected size (procedural, arm64 + armv7): roughly **18–40 MB** debug.
+
+## Desktop validation
+
+```bash
 cmake -S . -B build -DEXGINE_ROOT=../exgine
 cmake --build build -j
 ./build/exworld
 ```
-
-## Controls (when input is connected)
-
-| Action | Keyboard | Gamepad | Touch |
-|--------|----------|---------|-------|
-| Move | WASD | Left stick | Left virtual stick |
-| Look | (mouse later) | Right stick | Right virtual stick |
-| Sprint | Shift | RB | \u2014 |
-| Interact (enter car/door) | E | A | Top-right zone |
-| Exit vehicle/building | F | B | Bottom-right zone |
-| Crouch / brake | Ctrl | LB | \u2014 |
 
 ## License
 
