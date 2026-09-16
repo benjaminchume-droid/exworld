@@ -2,8 +2,6 @@
 
 #include "exgine/playable.hpp"
 #include "exgine/runtime.hpp"
-#include "exgine/exanimation.hpp"
-#include "exgine/exsound.hpp"
 
 #include "exworld/player.hpp"
 #include "exworld/vehicle.hpp"
@@ -12,10 +10,14 @@
 #include "exworld/sound_director.hpp"
 #include "exworld/wanted.hpp"
 #include "exworld/camera.hpp"
+#include "exworld/input.hpp"
+#include "exworld/police.hpp"
+#include "exworld/interior.hpp"
+#include "exworld/save.hpp"
 
-#include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace exworld {
 
@@ -29,20 +31,24 @@ public:
     [[nodiscard]] bool update(double dt) noexcept;
     [[nodiscard]] bool build_frame(exgine::RenderFrame& frame, exgine::RenderResult& result) noexcept;
 
-    // Inject real input from platform later
-    void set_input(const PlayerInput& input) noexcept { pending_input_ = input; }
+    // Input
+    InputSystem& input() noexcept { return input_; }
+    void set_input(const PlayerInput& input) noexcept; // direct override / tests
+
+    // Save / load
+    [[nodiscard]] std::vector<std::uint8_t> save_game() const;
+    [[nodiscard]] bool load_game(const std::vector<std::uint8_t>& bytes);
+    [[nodiscard]] bool save_to_file(const std::string& path) const;
+    [[nodiscard]] bool load_from_file(const std::string& path);
 
     [[nodiscard]] bool ready() const noexcept { return ready_; }
     [[nodiscard]] Player& player() noexcept { return player_; }
-    [[nodiscard]] const Player& player() const noexcept { return player_; }
-    [[nodiscard]] World& world() noexcept { return world_; }
-    [[nodiscard]] SoundDirector& sound() noexcept { return sound_; }
-    [[nodiscard]] AnimationDriver& animation() noexcept { return animation_; }
     [[nodiscard]] WantedSystem& wanted() noexcept { return wanted_; }
+    [[nodiscard]] PoliceAI& police() noexcept { return police_; }
     [[nodiscard]] GameCamera& camera() noexcept { return camera_; }
+    [[nodiscard]] InteriorNavigator& interiors() noexcept { return interiors_; }
 
     [[nodiscard]] exgine::PlayableGame& engine() noexcept { return engine_; }
-    [[nodiscard]] const exgine::PlayableGame& engine() const noexcept { return engine_; }
 
 private:
     exgine::ProjectSourceLoader loader_;
@@ -55,8 +61,13 @@ private:
     SoundDirector sound_;
     WantedSystem wanted_;
     GameCamera camera_;
+    InputSystem input_;
+    PoliceAI police_;
+    InteriorNavigator interiors_;
+    SaveSystem saves_;
 
-    PlayerInput pending_input_{};
+    PlayerInput forced_input_{};
+    bool use_forced_input_ = false;
     bool ready_ = false;
     bool configured_ = false;
     double time_ = 0.0;
@@ -64,6 +75,7 @@ private:
     [[nodiscard]] bool configure_systems();
     [[nodiscard]] bool spawn_world_content();
     void handle_interactions(float dt, exgine::Runtime& runtime);
+    void update_vehicle_possession(float dt, const PlayerInput& in, exgine::Runtime& runtime);
     void update_camera(exgine::Runtime& runtime);
 };
 
