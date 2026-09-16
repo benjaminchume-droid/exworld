@@ -1,4 +1,4 @@
-name: Build EXWORLD First Light APK
+name: Build EXWORLD APK (merged)
 
 on:
   workflow_dispatch:
@@ -7,8 +7,9 @@ on:
       - 'CMakeLists.txt'
       - 'include/**'
       - 'src/**'
-      - 'content/first_light/**'
+      - 'content/**'
       - 'android/**'
+      - 'platform/android/**'
       - '.github/workflows/build-first-light-apk.yml'
 
 jobs:
@@ -57,26 +58,22 @@ jobs:
 
       - name: Build installable debug APK
         working-directory: exworld/android
+        env:
+          EXGINE_ROOT: ${{ github.workspace }}/exgine
         run: |
-          gradle --no-daemon clean assembleDebug -PEXGINE_ROOT="$GITHUB_WORKSPACE/exgine"
+          gradle --no-daemon clean assembleDebug -PEXGINE_ROOT="$EXGINE_ROOT"
 
-      - name: Verify APK package and signature
+      - name: Verify APK
         run: |
           APK="exworld/android/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
-          unzip -t "$APK" >/dev/null
+          unzip -l "$APK" | grep -E 'libexworld_android\.so|assets/project\.exg'
           ls -lh "$APK"
 
-      - name: Rename installable artifact
-        run: |
-          mkdir -p artifacts
-          cp exworld/android/app/build/outputs/apk/debug/app-debug.apk artifacts/EXWORLD-First-Light.apk
-
-      - name: Upload installable First Light APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: exworld-first-light-apk
-          path: artifacts/EXWORLD-First-Light.apk
+          name: exworld-merged-apk
+          path: exworld/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14

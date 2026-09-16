@@ -1,6 +1,10 @@
-#include "exgine/android.hpp"
-#include "exgine/mobile.hpp"
+// Unified EXWORLD Android entry (First Light path → same rules as platform/android)
 #include "exworld/game.hpp"
+
+#include "exgine/android.hpp"
+#include "exgine/android_audio.hpp"
+#include "exgine/mobile.hpp"
+#include "exgine/render.hpp"
 
 #include <android/asset_manager.h>
 #include <android/input.h>
@@ -12,186 +16,237 @@
 #include <ctime>
 #include <memory>
 #include <string>
-#include <string_view>
 
 namespace {
-constexpr const char* kTag = "EXWORLD_FIRST_LIGHT";
+
+constexpr const char* kTag = "EXWORLD";
+
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, kTag, __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, kTag, __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, kTag, __VA_ARGS__)
 
 std::uint64_t monotonic_time_ns() {
     timespec v{};
     if (clock_gettime(CLOCK_MONOTONIC, &v) != 0) return 0;
-    return static_cast<std::uint64_t>(v.tv_sec) * 1000000000ull + static_cast<std::uint64_t>(v.tv_nsec);
+    return static_cast<std::uint64_t>(v.tv_sec) * 1000000000ull +
+           static_cast<std::uint64_t>(v.tv_nsec);
 }
 
-bool read_asset(AAssetManager* manager, std::string_view path, std::string& out) {
-    if (!manager) return false;
-    const std::string name(path);
-    AAsset* asset = AAssetManager_open(manager, name.c_str(), AASSET_MODE_BUFFER);
-    if (!asset) return false;
-    const auto size = static_cast<std::size_t>(AAsset_getLength64(asset));
-    out.resize(size);
-    const auto got = AAsset_read(asset, out.data(), size);
-    AAsset_close(asset);
-    return got >= 0 && static_cast<std::size_t>(got) == size;
+bool read_asset(AAssetManager* m, std::string_view path, std::string& out) {
+    if (!m) return false;
+    AAsset* a = AAssetManager_open(m, std::string(path).c_str(), AASSET_MODE_BUFFER);
+    if (!a) return false;
+    const auto n = static_cast<std::size_t>(AAsset_getLength64(a));
+    out.resize(n);
+    const auto got = AAsset_read(a, out.data(), n);
+    AAsset_close(a);
+    return got >= 0 && static_cast<std::size_t>(got) == n;
 }
 
-bool load_asset(AAssetManager* manager, std::string_view path, std::string& out) {
-    if (read_asset(manager, path, out)) return true;
-    std::string first_light = "first_light/";
-    first_light += path;
-    return read_asset(manager, first_light, out);
+bool load_asset(AAssetManager* m, std::string_view path, std::string& out) {
+    if (read_asset(m, path, out)) return true;
+    std::string a = "content/"; a += path;
+    if (read_asset(m, a, out)) return true;
+    std::string b = "first_light/"; b += path;
+    return read_asset(m, b, out);
 }
 
 struct AppState {
     exgine::AndroidEglPresenter presenter;
     exgine::MobileRuntimeBridge mobile;
+    exgine::AndroidAudioBackend audio;
     std::unique_ptr<exworld::ExWorldGame> game;
     AAssetManager* assets = nullptr;
-    double previous_time = 0.0;
+    int width = 1280;
+    int height = 720;
+    double previous_time = 0;
     bool started = false;
+    bool boot_ok = false;
+    std::string boot_error;
 };
 
-exgine::MobileInputEvent touch_event(exgine::MobileInputType type, const AInputEvent* event, std::size_t index) {
-    exgine::MobileInputEvent value;
-    value.type = type;
-    value.timestamp_ns = monotonic_time_ns();
-    value.touch.pointer_id = AMotionEvent_getPointerId(event, index);
-    value.touch.x = AMotionEvent_getX(event, index);
-    value.touch.y = AMotionEvent_getY(event, index);
-    value.touch.pressure = AMotionEvent_getPressure(event, index);
-    return value;
+void feed_touch(AppState* s, const AInputEvent* e, std::size_t i, bool down) {
+    if (!s || !s->game) return;
+    const float x = AMotionEvent_getX(e, i);
+    const float y = AMotionEvent_getY(e, i);
+    const float nx = s->width > 0 ? x / static_cast<float>(s->width) : 0.f;
+    const float ny = s->height > 0 ? y / static_cast<float>(s->height) : 0.f;
+    s->game->input().set_touch(AMotionEvent_getPointerId(e, i), down, nx, ny);
 }
 
 int32_t handle_input(android_app* app, AInputEvent* input) {
-    auto* state = static_cast<AppState*>(app->userData);
-    if (!state || !input) return 0;
+    auto* s = static_cast<AppState*>(app->userData);
+    if (!s || !input || !s->game) return 0;
 
     if (AInputEvent_getType(input) == AINPUT_EVENT_TYPE_KEY) {
         const int action = AKeyEvent_getAction(input);
         if (action != AKEY_EVENT_ACTION_DOWN && action != AKEY_EVENT_ACTION_UP) return 0;
-        exgine::MobileInputEvent value;
-        value.type = action == AKEY_EVENT_ACTION_DOWN ? exgine::MobileInputType::KeyDown : exgine::MobileInputType::KeyUp;
-        value.timestamp_ns = monotonic_time_ns();
-        value.key_code = AKeyEvent_getKeyCode(input);
-        value.meta_state = static_cast<std::uint32_t>(AKeyEvent_getMetaState(input));
-        return state->mobile.push_input(value) ? 1 : 0;
+        const int code = AKeyEvent_getKeyCode(input);
+        const bool down = action == AKEY_EVENT_ACTION_DOWN;
+        int mapped = 0;
+        switch (code) {
+        case AKEYCODE_W: mapped = 'W'; break;
+        case AKEYCODE_A: mapped = 'A'; break;
+        case AKEYCODE_S: mapped = 'S'; break;
+        case AKEYCODE_D: mapped = 'D'; break;
+        case AKEYCODE_E: mapped = 'E'; break;
+        case AKEYCODE_F: mapped = 'F'; break;
+        case AKEYCODE_SPACE: mapped = 32; break;
+        case AKEYCODE_SHIFT_LEFT:
+        case AKEYCODE_SHIFT_RIGHT: mapped = 16; break;
+        case AKEYCODE_BUTTON_A: s->game->input().set_gamepad_button(0, down); return 1;
+        case AKEYCODE_BUTTON_B: s->game->input().set_gamepad_button(1, down); return 1;
+        default: break;
+        }
+        if (mapped) { s->game->input().set_key(mapped, down); return 1; }
+        return 0;
     }
 
-    if (AInputEvent_getType(input) != AINPUT_EVENT_TYPE_MOTION ||
-        (AInputEvent_getSource(input) & AINPUT_SOURCE_CLASS_POINTER) == 0) return 0;
+    if (AInputEvent_getType(input) != AINPUT_EVENT_TYPE_MOTION) return 0;
+    if ((AInputEvent_getSource(input) & AINPUT_SOURCE_CLASS_POINTER) == 0) return 0;
 
     const int32_t action = AMotionEvent_getAction(input);
     const int32_t type = action & AMOTION_EVENT_ACTION_MASK;
-    const std::size_t index = static_cast<std::size_t>((action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT);
+    const std::size_t idx = static_cast<std::size_t>(
+        (action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT);
     const std::size_t count = AMotionEvent_getPointerCount(input);
 
-    if (type == AMOTION_EVENT_ACTION_DOWN || type == AMOTION_EVENT_ACTION_POINTER_DOWN ||
-        type == AMOTION_EVENT_ACTION_UP || type == AMOTION_EVENT_ACTION_POINTER_UP) {
-        if (index >= count) return 0;
-        const auto input_type = (type == AMOTION_EVENT_ACTION_UP || type == AMOTION_EVENT_ACTION_POINTER_UP)
-            ? exgine::MobileInputType::TouchUp : exgine::MobileInputType::TouchDown;
-        return state->mobile.push_input(touch_event(input_type, input, index)) ? 1 : 0;
+    if (type == AMOTION_EVENT_ACTION_DOWN || type == AMOTION_EVENT_ACTION_POINTER_DOWN) {
+        if (idx < count) feed_touch(s, input, idx, true);
+        return 1;
     }
-
-    if (type == AMOTION_EVENT_ACTION_MOVE || type == AMOTION_EVENT_ACTION_CANCEL) {
-        bool accepted = false;
-        const auto input_type = type == AMOTION_EVENT_ACTION_MOVE
-            ? exgine::MobileInputType::TouchMove : exgine::MobileInputType::TouchCancel;
-        for (std::size_t i = 0; i < count; ++i) accepted = state->mobile.push_input(touch_event(input_type, input, i)) || accepted;
-        return accepted ? 1 : 0;
+    if (type == AMOTION_EVENT_ACTION_UP || type == AMOTION_EVENT_ACTION_POINTER_UP) {
+        if (idx < count) feed_touch(s, input, idx, false);
+        return 1;
+    }
+    if (type == AMOTION_EVENT_ACTION_MOVE) {
+        for (std::size_t i = 0; i < count; ++i) feed_touch(s, input, i, true);
+        return 1;
     }
     return 0;
 }
 
 void handle_cmd(android_app* app, int32_t cmd) {
-    auto* state = static_cast<AppState*>(app->userData);
-    if (!state) return;
+    auto* s = static_cast<AppState*>(app->userData);
+    if (!s) return;
     switch (cmd) {
-        case APP_CMD_START: state->mobile.on_start(); break;
-        case APP_CMD_RESUME: state->mobile.on_resume(); break;
-        case APP_CMD_PAUSE: state->mobile.on_pause(); break;
-        case APP_CMD_STOP:
-            state->mobile.on_stop();
-            if (state->game) state->game->engine().session().game().runtime().stop_audio();
-            state->started = false;
-            break;
-        case APP_CMD_INIT_WINDOW:
-            if (app->window && state->presenter.attach(app->window)) state->mobile.on_surface_available();
-            break;
-        case APP_CMD_TERM_WINDOW:
-            state->mobile.on_surface_lost();
-            state->presenter.detach();
-            break;
-        case APP_CMD_WINDOW_RESIZED:
-        case APP_CMD_CONTENT_RECT_CHANGED:
-            (void)state->presenter.resize();
-            break;
-        default: break;
+    case APP_CMD_START: s->mobile.on_start(); break;
+    case APP_CMD_RESUME: s->mobile.on_resume(); break;
+    case APP_CMD_PAUSE: s->mobile.on_pause(); break;
+    case APP_CMD_STOP:
+        s->mobile.on_stop();
+        s->audio.stop();
+        s->started = false;
+        break;
+    case APP_CMD_INIT_WINDOW:
+        if (app->window && s->presenter.attach(app->window)) {
+            s->mobile.on_surface_available();
+            s->width = ANativeWindow_getWidth(app->window);
+            s->height = ANativeWindow_getHeight(app->window);
+            LOGI("surface %dx%d", s->width, s->height);
+        }
+        break;
+    case APP_CMD_TERM_WINDOW:
+        s->mobile.on_surface_lost();
+        s->presenter.detach();
+        break;
+    case APP_CMD_WINDOW_RESIZED:
+    case APP_CMD_CONTENT_RECT_CHANGED:
+        (void)s->presenter.resize();
+        if (app->window) {
+            s->width = ANativeWindow_getWidth(app->window);
+            s->height = ANativeWindow_getHeight(app->window);
+        }
+        break;
+    default: break;
     }
+}
+
+bool boot_game(AppState& state) {
+    auto loader = [&state](std::string_view path, std::string& out) -> bool {
+        std::string p(path);
+        if (p.rfind("./", 0) == 0) p = p.substr(2);
+        if (p.rfind("content/", 0) == 0) p = p.substr(8);
+        return load_asset(state.assets, p, out) || load_asset(state.assets, path, out);
+    };
+
+    state.game = std::make_unique<exworld::ExWorldGame>(loader);
+
+    // Prefer merged city project; fall back to First Light
+    std::string manifest;
+    if (!load_asset(state.assets, "project.exg", manifest) &&
+        !load_asset(state.assets, "first_light/project.exg", manifest)) {
+        state.boot_error = "no project.exg in APK assets";
+        LOGE("%s", state.boot_error.c_str());
+        return false;
+    }
+    LOGI("manifest loaded (%zu bytes)", manifest.size());
+
+    if (!state.game->open_from_manifest(manifest)) {
+        state.boot_error = "open_from_manifest failed";
+        LOGE("%s", state.boot_error.c_str());
+        return false;
+    }
+    LOGI("boot OK (Sebastian + DawnOfLight)");
+    return true;
 }
 
 } // namespace
 
 void android_main(android_app* app) {
+    LOGI("android_main enter (merged)");
     AppState state;
     state.assets = app->activity ? app->activity->assetManager : nullptr;
 
-    state.game = std::make_unique<exworld::ExWorldGame>([assets = state.assets](std::string_view path, std::string& out) {
-        return load_asset(assets, path, out);
-    });
-
-    if (!state.game->open("first_light")) {
-        __android_log_print(ANDROID_LOG_ERROR, kTag, "First Light project failed to open");
-        return;
-    }
-    if (!state.game->start()) {
-        __android_log_print(ANDROID_LOG_ERROR, kTag, "First Light game failed to start");
-        return;
+    state.boot_ok = boot_game(state);
+    if (!state.boot_ok) {
+        LOGE("Boot failed: %s — keeping process alive", state.boot_error.c_str());
+        // NEVER return here — that was the exit bug
     }
 
-    auto& runtime = state.game->engine().session().game().runtime();
-    if (!runtime.start_audio(48000)) {
-        __android_log_print(ANDROID_LOG_WARN, kTag, "EXGINE audio backend unavailable; continuing silently");
-    }
+    if (!state.audio.start()) LOGW("AAudio unavailable");
 
     app->userData = &state;
     app->onAppCmd = handle_cmd;
     app->onInputEvent = handle_input;
 
     for (;;) {
-        int ident = 0;
-        int events = 0;
+        int ident = 0, events = 0;
         android_poll_source* source = nullptr;
-        while ((ident = ALooper_pollOnce(state.mobile.renderable() ? 0 : -1, nullptr, &events,
+        while ((ident = ALooper_pollOnce(state.mobile.renderable() ? 0 : -1,
+                                         nullptr, &events,
                                          reinterpret_cast<void**>(&source))) >= 0) {
             if (source) source->process(app, source);
             if (app->destroyRequested) {
                 state.mobile.on_destroy();
                 state.mobile.on_surface_lost();
-                state.game->engine().session().game().runtime().stop_audio();
+                state.audio.stop();
                 state.presenter.detach();
                 return;
             }
         }
 
+        if (!state.boot_ok) continue;
         if (!state.mobile.renderable() || !state.presenter.ready()) continue;
 
-        const double now = static_cast<double>(monotonic_time_ns()) / 1000000000.0;
-        const double dt = state.previous_time > 0.0 ? std::clamp(now - state.previous_time, 0.0, 0.05) : 1.0 / 60.0;
+        const double now = static_cast<double>(monotonic_time_ns()) / 1e9;
+        const double dt = state.previous_time > 0
+                              ? std::clamp(now - state.previous_time, 0.0, 0.05)
+                              : 1.0 / 60.0;
         state.previous_time = now;
-        const auto timing = state.mobile.begin_frame(now);
-        if (timing.state == exgine::MobileFrameState::Paused) continue;
 
-        if (!state.started) state.started = state.game->start();
-        if (!state.started) continue;
+        if (state.mobile.begin_frame(now).state == exgine::MobileFrameState::Paused) continue;
+
+        if (!state.started) {
+            state.started = state.game->start();
+            if (!state.started) {
+                LOGE("start() failed — retrying");
+                continue;
+            }
+            LOGI("game started");
+        }
 
         if (!state.game->update(dt)) continue;
-
-        exgine::RenderFrame frame;
-        exgine::RenderResult result;
-        if (!state.game->build_frame(frame, result)) continue;
-        if (!state.presenter.present(frame)) {
-            __android_log_print(ANDROID_LOG_ERROR, kTag, "GPU present failed: %s", state.presenter.last_error().c_str());
-        }
+        (void)state.game->present(state.presenter, state.width, state.height);
     }
 }

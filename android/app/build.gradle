@@ -1,28 +1,49 @@
 plugins { id 'com.android.application' }
 
-def exgineRoot = project.findProperty('EXGINE_ROOT') ?: "${rootDir.parentFile.parentFile}/exgine"
+def resolveExgineRoot() {
+    def prop = project.findProperty('EXGINE_ROOT')
+    if (prop != null && new File(prop.toString(), 'CMakeLists.txt').exists()) return prop.toString()
+    def env = System.getenv('EXGINE_ROOT')
+    if (env != null && new File(env, 'CMakeLists.txt').exists()) return env
+    def candidates = [
+        file("${rootDir}/../../exgine").absolutePath,
+        file("${rootDir}/../../../exgine").absolutePath,
+        file("../../../../exgine").absolutePath
+    ]
+    for (c in candidates) {
+        if (new File(c, 'CMakeLists.txt').exists()) return c
+    }
+    return file("${rootDir}/../../exgine").absolutePath
+}
+
+def exgineRoot = resolveExgineRoot()
+println "EXWORLD (android/) EXGINE_ROOT=${exgineRoot}"
 
 android {
-    namespace 'com.exworld.firstlight'
+    namespace 'com.exworld.game'
     compileSdk 35
     ndkVersion '27.2.12479018'
 
     defaultConfig {
-        applicationId 'com.exworld.firstlight'
+        applicationId 'com.exworld.game'
         minSdk 26
         targetSdk 35
-        versionCode 1
-        versionName '1.0.0'
+        versionCode 5
+        versionName '0.4.0'
         externalNativeBuild {
             cmake {
-                arguments "-DEXGINE_ROOT=${exgineRoot}", '-DEXGINE_BUILD_DEMO=OFF', '-DEXGINE_BUILD_TESTS=OFF'
+                arguments "-DEXGINE_ROOT=${exgineRoot}",
+                          '-DEXGINE_BUILD_DEMO=OFF',
+                          '-DEXGINE_BUILD_TESTS=OFF',
+                          '-DANDROID_STL=c++_static'
+                abiFilters 'arm64-v8a', 'armeabi-v7a'
             }
         }
     }
 
     buildTypes {
         release { minifyEnabled false; debuggable false }
-        debug { debuggable true }
+        debug { debuggable true; jniDebuggable true }
     }
 
     sourceSets {
@@ -31,5 +52,9 @@ android {
 
     externalNativeBuild {
         cmake { path file('../CMakeLists.txt'); version '3.22.1' }
+    }
+
+    packaging {
+        jniLibs { useLegacyPackaging true }
     }
 }
