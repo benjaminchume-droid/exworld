@@ -4,12 +4,10 @@
 
 namespace exworld {
 
-// Third-person follow camera for free-roam / GTA-style control
 class GameCamera {
 public:
     void reset(const exgine::Vec3& target);
 
-    // yaw/pitch in radians, distance from target
     void set_look(float yaw, float pitch) noexcept;
     void set_distance(float d) noexcept { distance_ = d; }
 
@@ -22,11 +20,11 @@ public:
 
 private:
     exgine::Camera camera_{};
-    float yaw_ = 0.6f;
-    float pitch_ = -0.25f;
-    float distance_ = 5.5f;
-    float vehicle_distance_ = 8.0f;
-    float smooth_ = 10.0f;
+    float yaw_ = 0.55f;
+    float pitch_ = -0.28f;
+    float distance_ = 10.f;
+    float vehicle_distance_ = 16.f;
+    float smooth_ = 9.f;
     exgine::Vec3 current_pos_{};
     bool initialized_ = false;
 };
