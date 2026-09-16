@@ -24,6 +24,19 @@ jobs:
           repository: benjaminchume-droid/exgine
           path: exgine
 
+      - name: Bake real 3D mesh packages into content/baked
+        working-directory: exworld
+        run: |
+          set -euo pipefail
+          python3 tools/bake_real_meshes.py
+          test -f content/baked/character.exg
+          test -f content/baked/vehicle_sedan.exg
+          test -f content/baked/building.exg
+          test -f content/baked/ground.exg
+          test -f content/baked/index.exg
+          echo "Baked mesh packages:"
+          wc -c content/baked/*.exg
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -95,7 +108,7 @@ jobs:
           find app/.cxx -name 'CMakeOutput.log' -exec tail -80 {} \; 2>/dev/null || true
           find app/build -name '*.log' 2>/dev/null | head -20
 
-      - name: Verify native libs inside APK
+      - name: Verify native libs and baked assets inside APK
         working-directory: exworld/platform/android
         run: |
           set -euo pipefail
@@ -105,7 +118,9 @@ jobs:
           unzip -l "$APK" | tee /tmp/apk-list.txt
           grep -E 'lib/.*/libexworld_android\.so' /tmp/apk-list.txt
           grep -E 'assets/project\.exg' /tmp/apk-list.txt
-          unzip -l "$APK" | grep '\.so' || true
+          grep -E 'assets/baked/character\.exg' /tmp/apk-list.txt
+          grep -E 'assets/baked/index\.exg' /tmp/apk-list.txt
+          unzip -l "$APK" | grep 'baked/' || true
           SIZE=$(stat -c%s "$APK")
           echo "APK bytes=$SIZE"
           if [ "$SIZE" -lt 500000 ]; then
