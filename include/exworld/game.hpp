@@ -14,13 +14,15 @@
 #include "exworld/police.hpp"
 #include "exworld/interior.hpp"
 #include "exworld/save.hpp"
+#include "exworld/asset_package.hpp"
+#include "exworld/hud.hpp"
 
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace exgine {
-class AndroidEglPresenter; // forward decl — avoid pulling android.hpp into every TU
+class AndroidEglPresenter;
 struct RenderFrame;
 struct RenderResult;
 }
@@ -53,6 +55,8 @@ public:
     [[nodiscard]] PoliceAI& police() noexcept { return police_; }
     [[nodiscard]] GameCamera& camera() noexcept { return camera_; }
     [[nodiscard]] InteriorNavigator& interiors() noexcept { return interiors_; }
+    [[nodiscard]] AssetPackageRegistry& packages() noexcept { return packages_; }
+    [[nodiscard]] Hud& hud() noexcept { return hud_; }
     [[nodiscard]] exgine::PlayableGame& engine() noexcept { return engine_; }
 
 private:
@@ -70,18 +74,23 @@ private:
     PoliceAI police_;
     InteriorNavigator interiors_;
     SaveSystem saves_;
+    AssetPackageRegistry packages_;
+    Hud hud_;
 
     PlayerInput forced_input_{};
     bool use_forced_input_ = false;
     bool ready_ = false;
     bool configured_ = false;
     double time_ = 0.0;
+    std::string region_name_ = "Downtown";
 
     [[nodiscard]] bool configure_systems();
     [[nodiscard]] bool spawn_world_content();
+    [[nodiscard]] bool load_baked_packages();
     void handle_interactions(float dt, exgine::Runtime& runtime);
     void update_vehicle_possession(float dt, const PlayerInput& in, exgine::Runtime& runtime);
     void update_camera(exgine::Runtime& runtime);
+    void update_region(const exgine::Vec3& pos);
 };
 
 } // namespace exworld

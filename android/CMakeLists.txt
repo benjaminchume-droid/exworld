@@ -25,7 +25,6 @@ if(NOT EXISTS "${ANDROID_GLUE_SOURCE}")
   message(FATAL_ERROR "Android NDK native_app_glue not found: ${ANDROID_GLUE_SOURCE}")
 endif()
 
-# Full game sources — must match platform/android to avoid link collapse
 set(EXWORLD_SOURCES
   ${EXWORLD_ROOT}/src/game.cpp
   ${EXWORLD_ROOT}/src/player.cpp
@@ -39,6 +38,8 @@ set(EXWORLD_SOURCES
   ${EXWORLD_ROOT}/src/police.cpp
   ${EXWORLD_ROOT}/src/interior.cpp
   ${EXWORLD_ROOT}/src/save.cpp
+  ${EXWORLD_ROOT}/src/asset_package.cpp
+  ${EXWORLD_ROOT}/src/hud.cpp
 )
 
 add_library(exworld_android SHARED
