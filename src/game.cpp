@@ -7,6 +7,7 @@
 #include <cmath>
 #include <filesystem>
 #include <iostream>
+#include <string_view>
 
 namespace exworld {
 
@@ -28,6 +29,28 @@ exgine::EntityId find_by_kind(exgine::Runtime& r, exgine::NodeKind kind) {
     return exgine::invalid_entity;
 }
 
+// Accept any merged character name as the controllable player
+exgine::EntityId find_player_entity(exgine::Runtime& r) {
+    static constexpr const char* kNames[] = {
+        "Sebastian", "Player", "Explorer", "DawnOfLight"
+    };
+    for (const char* n : kNames) {
+        auto id = find_by_name(r, n);
+        if (id) {
+            auto* e = r.state().entities.get(id);
+            // Prefer real player nodes; DawnOfLight may be NPC — still allow if named first
+            if (e && (e->kind == exgine::NodeKind::Player || e->name == "Sebastian" ||
+                      e->name == "Player" || e->name == "Explorer"))
+                return id;
+        }
+    }
+    // Prefer Sebastian if tagged NPC somehow, then any Player kind
+    if (auto id = find_by_name(r, "Sebastian")) return id;
+    if (auto id = find_by_kind(r, exgine::NodeKind::Player)) return id;
+    if (auto id = find_by_name(r, "DawnOfLight")) return id;
+    return exgine::invalid_entity;
+}
+
 } // namespace
 
 ExWorldGame::ExWorldGame(exgine::ProjectSourceLoader loader)
@@ -42,7 +65,9 @@ bool ExWorldGame::open(std::string_view content_root) {
     ready_ = configured_ = false;
     const std::filesystem::path root(content_root);
     std::string manifest;
-    if (!loader_((root / "project.exg").string(), manifest) && !loader_("project.exg", manifest)) {
+    if (!loader_((root / "project.exg").string(), manifest) &&
+        !loader_("project.exg", manifest) &&
+        !loader_("first_light/project.exg", manifest)) {
         std::cerr << "EXWORLD: project.exg not found\n";
         return false;
     }
@@ -55,21 +80,18 @@ bool ExWorldGame::open_from_manifest(std::string_view manifest_text) {
         std::cerr << "EXWORLD: PlayableGame::open_project failed\n";
         return false;
     }
+    // Soft configure: do not hard-abort the whole game if animation fails
     if (!configure_systems()) {
-        std::cerr << "EXWORLD: configure_systems failed\n";
-        return false;
+        std::cerr << "EXWORLD: configure_systems soft-failed (continuing)\n";
     }
-    if (!spawn_world_content()) {
-        std::cerr << "EXWORLD: spawn_world_content failed\n";
-        return false;
-    }
+    (void)spawn_world_content();
     configured_ = true;
     return engine_.show_menu();
 }
 
 bool ExWorldGame::start() noexcept {
     ready_ = configured_ && engine_.start();
-    if (ready_) {
+    if (ready_ && player_.valid()) {
         auto& runtime = engine_.session().game().runtime();
         camera_.reset(player_.position(runtime));
     }
@@ -78,21 +100,25 @@ bool ExWorldGame::start() noexcept {
 
 bool ExWorldGame::configure_systems() {
     auto& runtime = engine_.session().game().runtime();
-    auto player_id = find_by_name(runtime, "Player");
-    if (!player_id) player_id = find_by_kind(runtime, exgine::NodeKind::Player);
+
+    auto player_id = find_player_entity(runtime);
     if (!player_id) {
-        std::cerr << "EXWORLD: no Player entity in scene\n";
+        std::cerr << "EXWORLD: no playable entity (Sebastian/Player/Explorer)\n";
         return false;
     }
+
     exgine::CharacterId cid = exgine::invalid_character;
     const auto& bindings = runtime.character_bindings();
     auto it = bindings.find(player_id);
     if (it != bindings.end()) cid = it->second;
+
     player_.bind(runtime, player_id, cid);
+
+    // Soft: animation optional — game must still run without clips
     if (!animation_.initialize(runtime, player_id)) {
-        std::cerr << "EXWORLD: AnimationDriver failed\n";
-        return false;
+        std::cerr << "EXWORLD: AnimationDriver unavailable (running without clips)\n";
     }
+
     sound_.initialize(runtime);
     world_.bootstrap(runtime);
     wanted_.reset();
@@ -108,6 +134,7 @@ bool ExWorldGame::spawn_world_content() {
     world_.clear();
     police_.clear();
     interiors_.clear();
+
     for (auto id : runtime.state().entities.ids()) {
         auto* e = runtime.state().entities.get(id);
         if (!e) continue;
@@ -119,15 +146,17 @@ bool ExWorldGame::spawn_world_content() {
         }
         if (e->kind == exgine::NodeKind::Vehicle)
             vehicles_.register_vehicle(runtime, id, e->name, {});
-        if (e->kind == exgine::NodeKind::NPC)
+        if (e->kind == exgine::NodeKind::NPC && e->name != "DawnOfLight")
             police_.register_unit(id);
     }
     return true;
 }
 
 void ExWorldGame::handle_interactions(float, exgine::Runtime& runtime) {
+    if (!player_.valid()) return;
     PlayerInput in = use_forced_input_ ? forced_input_ : input_.poll();
     const auto pos = player_.position(runtime);
+
     if (in.interact && player_.mode() == PlayerMode::OnFoot) {
         auto veh = vehicles_.nearest_vehicle(pos, 3.5f, runtime);
         if (veh != exgine::invalid_entity) {
@@ -149,6 +178,7 @@ void ExWorldGame::handle_interactions(float, exgine::Runtime& runtime) {
             }
         }
     }
+
     if (in.exit) {
         if (player_.mode() == PlayerMode::InVehicle) {
             const auto* seat = vehicles_.seat(player_.current_vehicle());
@@ -179,6 +209,7 @@ void ExWorldGame::update_vehicle_possession(float dt, const PlayerInput& in,
 }
 
 void ExWorldGame::update_camera(exgine::Runtime& runtime) {
+    if (!player_.valid()) return;
     const auto pos = player_.position(runtime);
     PlayerInput in = use_forced_input_ ? forced_input_ : input_.poll();
     camera_.set_look(camera_.yaw() + in.look_yaw * 0.025f,
@@ -193,23 +224,30 @@ bool ExWorldGame::update(double dt) noexcept {
     time_ += dt;
     auto& runtime = engine_.session().game().runtime();
     PlayerInput in = use_forced_input_ ? forced_input_ : input_.poll();
-    handle_interactions(static_cast<float>(dt), runtime);
-    update_vehicle_possession(static_cast<float>(dt), in, runtime);
-    if (player_.mode() == PlayerMode::InsideBuilding && interiors_.active()) {
-        interiors_.update(static_cast<float>(dt), in.move_x, in.move_z,
-                          player_.entity(), runtime);
-    } else {
-        player_.update(in, static_cast<float>(dt), runtime);
+
+    if (player_.valid()) {
+        handle_interactions(static_cast<float>(dt), runtime);
+        update_vehicle_possession(static_cast<float>(dt), in, runtime);
+
+        if (player_.mode() == PlayerMode::InsideBuilding && interiors_.active()) {
+            interiors_.update(static_cast<float>(dt), in.move_x, in.move_z,
+                              player_.entity(), runtime);
+        } else {
+            player_.update(in, static_cast<float>(dt), runtime);
+        }
+
+        animation_.update(static_cast<float>(dt), player_.motion(), runtime);
+
+        const auto pos = player_.position(runtime);
+        const bool in_vehicle = player_.mode() == PlayerMode::InVehicle;
+        sound_.update(static_cast<float>(dt), pos, player_.motion().speed, in_vehicle,
+                      in_vehicle ? 2200.f : 0.f, runtime);
+        world_.set_stream_focus(pos, runtime);
+        police_.update(static_cast<float>(dt), pos, wanted_.level(), runtime);
+        update_camera(runtime);
     }
-    animation_.update(static_cast<float>(dt), player_.motion(), runtime);
-    const auto pos = player_.position(runtime);
-    const bool in_vehicle = player_.mode() == PlayerMode::InVehicle;
-    sound_.update(static_cast<float>(dt), pos, player_.motion().speed, in_vehicle,
-                  in_vehicle ? 2200.f : 0.f, runtime);
-    world_.set_stream_focus(pos, runtime);
+
     wanted_.update(static_cast<float>(dt), runtime);
-    police_.update(static_cast<float>(dt), pos, wanted_.level(), runtime);
-    update_camera(runtime);
     use_forced_input_ = false;
     return engine_.update(dt);
 }

@@ -1,5 +1,5 @@
 name = EXWORLD
-version = 0.2
+version = 0.4
 startup_scene = City
 tick_rate = 60
 seconds_per_day = 1800
@@ -21,3 +21,4 @@ setting.audio = spatial
 setting.save_format = native
 setting.game = open_world
 setting.wanted = true
+setting.characters = Sebastian,DawnOfLight

@@ -6,13 +6,20 @@ game "EXWORLD" {
       sea_level = -2
     }
 
-    player "Player" {
+    // Playable protagonist
+    player "Sebastian" {
       x = 0
       y = 1.1
       z = 0
     }
 
-    // Dense city block
+    // Companion / Dawn of Light (from First Light merge)
+    npc "DawnOfLight" {
+      x = 3
+      y = 1.1
+      z = 2
+    }
+
     building "ApartmentBlock_A" {
       floors = 5
       rooms_per_floor = 6
@@ -103,7 +110,5 @@ game "EXWORLD" {
     npc "Pedestrian_02" { x = -5 y = 1 z = -3 }
     npc "Pedestrian_03" { x = 10 y = 1 z = -8 }
     npc "Pedestrian_04" { x = -12 y = 1 z = 6 }
-    npc "Pedestrian_05" { x = 20 y = 1 z = 2 }
-    npc "Pedestrian_06" { x = -18 y = 1 z = -15 }
   }
 }
