@@ -5,12 +5,30 @@
 
 namespace exworld {
 
-void Player::bind(exgine::Runtime& runtime, exgine::EntityId entity) {
+void Player::bind(exgine::Runtime& runtime, exgine::EntityId entity, exgine::CharacterId character) {
     entity_ = entity;
+    character_ = character;
     mode_ = PlayerMode::OnFoot;
     vehicle_ = building_ = exgine::invalid_entity;
     motion_ = {};
+    yaw_ = 0.f;
     (void)runtime;
+}
+
+exgine::Vec3 Player::position(const exgine::Runtime& runtime) const {
+    auto* e = runtime.state().entities.get(entity_);
+    if (!e) return {};
+    return {e->transform.x, e->transform.y, e->transform.z};
+}
+
+float Player::enter_progress() const noexcept {
+    if (enter_duration_ <= 0.f) return 1.f;
+    return 1.f - std::clamp(enter_timer_ / enter_duration_, 0.f, 1.f);
+}
+
+float Player::exit_progress() const noexcept {
+    if (exit_duration_ <= 0.f) return 1.f;
+    return 1.f - std::clamp(exit_timer_ / exit_duration_, 0.f, 1.f);
 }
 
 void Player::update(const PlayerInput& input, float dt, exgine::Runtime& runtime) {
@@ -21,24 +39,20 @@ void Player::update(const PlayerInput& input, float dt, exgine::Runtime& runtime
         update_on_foot(input, dt, runtime);
         break;
     case PlayerMode::InVehicle:
-        update_vehicle(input, dt, runtime);
+        update_in_vehicle(input, dt, runtime);
         break;
     case PlayerMode::EnteringVehicle:
-        enter_timer_ -= dt;
-        if (enter_timer_ <= 0.f) {
-            mode_ = PlayerMode::InVehicle;
-        }
-        break;
     case PlayerMode::ExitingVehicle:
-        exit_timer_ -= dt;
-        if (exit_timer_ <= 0.f) {
-            mode_ = PlayerMode::OnFoot;
-            vehicle_ = exgine::invalid_entity;
-        }
+        update_transition(dt);
         break;
     case PlayerMode::EnteringBuilding:
+        // short transition then inside
+        enter_timer_ -= dt;
+        if (enter_timer_ <= 0.f) mode_ = PlayerMode::InsideBuilding;
+        break;
     case PlayerMode::InsideBuilding:
-        // Building interior logic expands later
+        // limited movement inside for now
+        update_on_foot(input, dt, runtime);
         break;
     default:
         break;
@@ -46,28 +60,42 @@ void Player::update(const PlayerInput& input, float dt, exgine::Runtime& runtime
 }
 
 void Player::update_on_foot(const PlayerInput& input, float dt, exgine::Runtime& runtime) {
+    // Prefer the real character controller when available
+    if (character_ != exgine::invalid_character) {
+        exgine::CharacterControllerInput cinput;
+        cinput.move_x = input.move_x;
+        cinput.move_z = input.move_z;
+        cinput.run = input.sprint;
+        cinput.crouch = input.crouch;
+        cinput.jump = input.jump;
+        (void)runtime.update_character(character_, cinput, dt);
+    }
+
     auto* e = runtime.state().entities.get(entity_);
     if (!e) return;
 
-    // Simple kinematic move for now (physics character controller will replace this)
-    const float speed = input.sprint ? 6.5f : 3.2f;
-    const float dx = input.move_x * speed * dt;
-    const float dz = input.move_z * speed * dt;
+    // If character controller didn't move the entity yet, apply light kinematic fallback
+    if (character_ == exgine::invalid_character) {
+        const float speed = input.sprint ? 6.2f : 3.1f;
+        e->transform.x += input.move_x * speed * dt;
+        e->transform.z += input.move_z * speed * dt;
+    } else {
+        // Sync entity transform from character if possible (future: pull from CharacterControllerState)
+    }
 
-    e->transform.x += dx;
-    e->transform.z += dz;
+    yaw_ += input.look_yaw;
 
-    // Update motion state for animation + sound
-    const float planar = std::sqrt(dx * dx + dz * dz) / std::max(dt, 0.0001f);
-    motion_.speed = planar;
+    const float planar = std::sqrt(input.move_x * input.move_x + input.move_z * input.move_z);
+    const float speed = planar * (input.sprint ? 6.2f : 3.1f);
+
+    motion_.speed = speed;
     motion_.vertical_speed = 0.f;
     motion_.grounded = true;
-    motion_.sprinting = input.sprint && planar > 1.0f;
-    motion_.crouch = 0.f;
+    motion_.sprinting = input.sprint && planar > 0.2f;
+    motion_.crouch = input.crouch ? 1.f : 0.f;
     motion_.aim = 0.f;
-    motion_.turn = input.look_yaw;
+    motion_.turn = yaw_;
 
-    // Keep scene node in sync if present
     if (e->scene_node) {
         (void)runtime.scene().set_local_transform(
             e->scene_node,
@@ -75,30 +103,54 @@ void Player::update_on_foot(const PlayerInput& input, float dt, exgine::Runtime&
     }
 }
 
-void Player::update_vehicle(const PlayerInput& /*input*/, float /*dt*/, exgine::Runtime& /*runtime*/) {
-    // Vehicle driving is handled by VehicleController + physics.
-    // While inside we just keep motion state low for animation.
+void Player::update_in_vehicle(const PlayerInput& /*input*/, float /*dt*/, exgine::Runtime& runtime) {
+    // While in vehicle the vehicle controller owns motion.
+    // Keep player entity snapped to vehicle seat.
+    auto* v = runtime.state().entities.get(vehicle_);
+    auto* e = runtime.state().entities.get(entity_);
+    if (!v || !e) return;
+
+    e->transform.x = v->transform.x;
+    e->transform.y = v->transform.y + 0.55f;
+    e->transform.z = v->transform.z;
+
     motion_.speed = 0.f;
     motion_.sprinting = false;
     motion_.grounded = true;
 }
 
-bool Player::try_enter_vehicle(exgine::EntityId vehicle, exgine::Runtime& runtime) {
+void Player::update_transition(float dt) {
+    if (mode_ == PlayerMode::EnteringVehicle) {
+        enter_timer_ -= dt;
+        if (enter_timer_ <= 0.f) mode_ = PlayerMode::InVehicle;
+    } else if (mode_ == PlayerMode::ExitingVehicle) {
+        exit_timer_ -= dt;
+        if (exit_timer_ <= 0.f) {
+            mode_ = PlayerMode::OnFoot;
+            vehicle_ = exgine::invalid_entity;
+        }
+    }
+}
+
+bool Player::try_enter_vehicle(exgine::EntityId vehicle, float enter_duration,
+                               exgine::Runtime& runtime) {
     if (mode_ != PlayerMode::OnFoot || vehicle == exgine::invalid_entity) return false;
     auto* v = runtime.state().entities.get(vehicle);
     if (!v || v->kind != exgine::NodeKind::Vehicle) return false;
 
     vehicle_ = vehicle;
     mode_ = PlayerMode::EnteringVehicle;
-    enter_timer_ = 1.1f;
+    enter_duration_ = enter_duration > 0.1f ? enter_duration : 1.15f;
+    enter_timer_ = enter_duration_;
     return true;
 }
 
-bool Player::try_exit_vehicle(exgine::Runtime& runtime) {
+bool Player::try_exit_vehicle(float exit_duration, exgine::Runtime& runtime) {
     if (mode_ != PlayerMode::InVehicle || vehicle_ == exgine::invalid_entity) return false;
     (void)runtime;
     mode_ = PlayerMode::ExitingVehicle;
-    exit_timer_ = 0.9f;
+    exit_duration_ = exit_duration > 0.1f ? exit_duration : 0.95f;
+    exit_timer_ = exit_duration_;
     return true;
 }
 
@@ -109,6 +161,8 @@ bool Player::try_enter_building(exgine::EntityId building, exgine::Runtime& runt
 
     building_ = building;
     mode_ = PlayerMode::EnteringBuilding;
+    enter_duration_ = 0.85f;
+    enter_timer_ = enter_duration_;
     return true;
 }
 

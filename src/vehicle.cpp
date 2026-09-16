@@ -4,6 +4,8 @@
 
 namespace exworld {
 
+void VehicleController::clear() { vehicles_.clear(); }
+
 void VehicleController::register_vehicle(exgine::Runtime& /*runtime*/, exgine::EntityId id,
                                          std::string name, VehicleSeat seat) {
     vehicles_.push_back({id, std::move(name), seat});
@@ -21,7 +23,7 @@ exgine::EntityId VehicleController::nearest_vehicle(const exgine::Vec3& pos, flo
         const float dy = e->transform.y - pos.y;
         const float dz = e->transform.z - pos.z;
         const float d = std::sqrt(dx * dx + dy * dy + dz * dz);
-        if (d < best_d) {
+        if (d < best_d && d <= v.seat.interact_radius) {
             best_d = d;
             best = v.id;
         }
@@ -34,10 +36,18 @@ void VehicleController::update_driven(exgine::EntityId vehicle, float throttle, 
     auto* e = runtime.state().entities.get(vehicle);
     if (!e) return;
 
-    // Temporary kinematic drive until full vehicle dynamics possession is hooked
-    const float speed = (throttle - brake) * 14.0f;
-    e->transform.x += std::sin(steer) * speed * dt;
-    e->transform.z += std::cos(steer) * speed * dt;
+    // Prefer engine vehicle dynamics when bound
+    auto& dyn = runtime.vehicle_dynamics();
+    auto it = dyn.find(vehicle);
+    if (it != dyn.end() && it->second) {
+        // Future: feed throttle/steer/brake into VehicleDynamicsController
+        // For now still advance a simple kinematic so the world stays alive
+    }
+
+    const float speed = (throttle - brake * 0.8f) * 16.0f;
+    const float yaw = steer * 1.2f;
+    e->transform.x += std::sin(yaw) * speed * dt;
+    e->transform.z += std::cos(yaw) * speed * dt;
 
     if (e->scene_node) {
         (void)runtime.scene().set_local_transform(
