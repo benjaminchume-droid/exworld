@@ -21,6 +21,9 @@ set(EXWORLD_ROOT "${CMAKE_CURRENT_LIST_DIR}/../..")
 
 set(ANDROID_GLUE_DIR "${ANDROID_NDK}/sources/android/native_app_glue")
 set(ANDROID_GLUE_SOURCE "${ANDROID_GLUE_DIR}/android_native_app_glue.c")
+if(NOT EXISTS "${ANDROID_GLUE_SOURCE}")
+  message(FATAL_ERROR "Android NDK native_app_glue not found: ${ANDROID_GLUE_SOURCE}")
+endif()
 
 set(EXWORLD_SOURCES
   ${EXWORLD_ROOT}/src/game.cpp
@@ -37,10 +40,12 @@ set(EXWORLD_SOURCES
   ${EXWORLD_ROOT}/src/save.cpp
   ${EXWORLD_ROOT}/src/asset_package.cpp
   ${EXWORLD_ROOT}/src/hud.cpp
+  ${EXWORLD_ROOT}/src/visuals.cpp
 )
 
+# native_activity lives under platform/android/src/main/cpp/
 add_library(exworld_android SHARED
-  src/main/cpp/native_activity.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/src/main/cpp/native_activity.cpp
   ${ANDROID_GLUE_SOURCE}
   ${EXWORLD_SOURCES}
 )
