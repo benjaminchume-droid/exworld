@@ -40,6 +40,7 @@ set(EXWORLD_SOURCES
   ${EXWORLD_ROOT}/src/save.cpp
   ${EXWORLD_ROOT}/src/asset_package.cpp
   ${EXWORLD_ROOT}/src/hud.cpp
+  ${EXWORLD_ROOT}/src/visuals.cpp
 )
 
 add_library(exworld_android SHARED
@@ -56,10 +57,5 @@ target_include_directories(exworld_android PRIVATE
 target_compile_features(exworld_android PRIVATE cxx_std_20)
 target_compile_definitions(exworld_android PRIVATE EXWORLD_ANDROID=1)
 target_link_libraries(exworld_android PRIVATE
-  exgine_core
-  android
-  log
-  EGL
-  GLESv3
-  aaudio
+  exgine_core android log EGL GLESv3 aaudio
 )

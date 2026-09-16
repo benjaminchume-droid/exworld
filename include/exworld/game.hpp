@@ -16,6 +16,7 @@
 #include "exworld/save.hpp"
 #include "exworld/asset_package.hpp"
 #include "exworld/hud.hpp"
+#include "exworld/visuals.hpp"
 
 #include <string>
 #include <string_view>
@@ -76,6 +77,7 @@ private:
     SaveSystem saves_;
     AssetPackageRegistry packages_;
     Hud hud_;
+    VisualSystem visuals_;
 
     PlayerInput forced_input_{};
     bool use_forced_input_ = false;

@@ -6,7 +6,7 @@
 namespace exworld {
 
 // Attaches real MeshAssembly geometry (characters, ground, HUD markers)
-and ensures materials resolve so Renderer::build_frame draws them.
+// and ensures materials resolve so Renderer::build_frame draws them.
 class VisualSystem {
 public:
     bool bootstrap(exgine::Runtime& runtime, exgine::EntityId player);

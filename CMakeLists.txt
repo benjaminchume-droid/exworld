@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(exworld VERSION 1.0.0 LANGUAGES CXX)
+project(exworld VERSION 1.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,6 +35,7 @@ set(EXWORLD_SOURCES
   src/save.cpp
   src/asset_package.cpp
   src/hud.cpp
+  src/visuals.cpp
 )
 
 add_executable(exworld ${EXWORLD_SOURCES})
