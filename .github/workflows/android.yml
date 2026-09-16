@@ -30,43 +30,88 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Same pattern as the working EXGINE android.yml
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
-      - name: Install Android packages
+      - name: Install Android toolchain
         run: |
+          set -euo pipefail
+          echo "ANDROID_HOME=${ANDROID_HOME:-}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-}"
+          which sdkmanager || true
+          sdkmanager --list_installed || true
+
+          # Accept licenses non-interactively
+          yes | sdkmanager --licenses >/tmp/sdk-licenses.log 2>&1 || true
+
           sdkmanager --install \
             "platforms;android-35" \
             "build-tools;35.0.0" \
             "ndk;27.2.12479018" \
             "cmake;3.22.1"
-          yes | sdkmanager --licenses || true
+
+          # Resolve SDK root for later steps
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$SDK_ROOT" ]; then
+            # setup-android usually exports ANDROID_HOME; fallback common path
+            if [ -d "$HOME/Android/Sdk" ]; then
+              SDK_ROOT="$HOME/Android/Sdk"
+            elif [ -d "/usr/local/lib/android/sdk" ]; then
+              SDK_ROOT="/usr/local/lib/android/sdk"
+            fi
+          fi
+          echo "SDK_ROOT=$SDK_ROOT"
+          test -n "$SDK_ROOT"
+          test -d "$SDK_ROOT"
+
+          NDK_DIR="$SDK_ROOT/ndk/27.2.12479018"
+          test -d "$NDK_DIR"
+
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "EXGINE_ROOT=${{ github.workspace }}/exgine" >> "$GITHUB_ENV"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
 
+      - name: Write local.properties
+        working-directory: exworld/platform/android
+        run: |
+          set -euo pipefail
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          echo "ndk.dir=$ANDROID_NDK_HOME" >> local.properties
+          cat local.properties
+          test -f "${{ github.workspace }}/exgine/CMakeLists.txt"
+
       - name: Build debug APK
         working-directory: exworld/platform/android
         env:
           EXGINE_ROOT: ${{ github.workspace }}/exgine
-          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
-          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
         run: |
-          echo "Workspace: ${{ github.workspace }}"
+          set -euo pipefail
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
           echo "EXGINE_ROOT=$EXGINE_ROOT"
-          test -f "$EXGINE_ROOT/CMakeLists.txt"
+          test -d "$ANDROID_HOME"
           test -d "$ANDROID_NDK_HOME"
-          gradle --no-daemon :app:assembleDebug
+          test -f "$EXGINE_ROOT/CMakeLists.txt"
+          gradle --no-daemon --stacktrace :app:assembleDebug
 
       - name: Locate APK
         working-directory: exworld/platform/android
         run: |
-          APK=$(find app/build/outputs/apk/debug -name '*.apk' 2>/dev/null | head -n 1)
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk/debug -name '*.apk' 2>/dev/null | head -n 1 || true)
           if [ -z "$APK" ]; then
             echo "No debug APK found"
-            find app/build -type f -name '*.apk' -o -name '*.so' 2>/dev/null | head -50 || true
+            find app/build -type f \( -name '*.apk' -o -name '*.so' \) 2>/dev/null | head -80 || true
             exit 1
           fi
           echo "Found APK: $APK"
