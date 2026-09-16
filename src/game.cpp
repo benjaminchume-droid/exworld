@@ -145,6 +145,8 @@ bool ExWorldGame::configure_systems() {
 
     player_.bind(runtime, player_id, cid);
 
+    (void)load_baked_packages();
+
     const auto pos = player_.position(runtime);
     if (!ensure_render_basics(runtime, pos)) {
         std::cerr << "EXWORLD: render basics failed\n";
@@ -161,6 +163,50 @@ bool ExWorldGame::configure_systems() {
     interiors_.clear();
     input_.reset();
     return true;
+}
+
+bool ExWorldGame::load_baked_packages() {
+    if (!loader_) return false;
+    std::string index;
+    if (!loader_("baked/index.exg", index) && !loader_("content/baked/index.exg", index)) {
+        std::cerr << "EXWORLD: baked/index.exg not found (continuing)\n";
+        return false;
+    }
+    auto file_loader = [this](std::string_view path, std::string& out) -> bool {
+        if (!loader_) return false;
+        if (loader_(path, out)) return true;
+        return loader_(std::string("content/") + std::string(path), out);
+    };
+    if (!packages_.load_from_text(index, file_loader)) {
+        std::cerr << "EXWORLD: baked package index parse failed\n";
+        return false;
+    }
+    std::cerr << "EXWORLD: loaded " << packages_.all().size()
+              << " baked packages stream_r=" << packages_.scale().stream_radius << "\n";
+    return true;
+}
+
+void ExWorldGame::update_region(const exgine::Vec3& pos) {
+    struct R { const char* name; float x; float z; float r; };
+    static constexpr R regions[] = {
+        {"Downtown", 0.f, 0.f, 200.f},
+        {"Suburbs", 400.f, 50.f, 150.f},
+        {"Forest", -800.f, 450.f, 300.f},
+        {"Lake", 650.f, -520.f, 280.f},
+        {"Swamp", -420.f, -720.f, 250.f},
+    };
+    const char* best = "Wilderness";
+    float best_d = 1e9f;
+    for (const auto& r : regions) {
+        const float dx = pos.x - r.x;
+        const float dz = pos.z - r.z;
+        const float d = std::sqrt(dx * dx + dz * dz);
+        if (d < r.r && d < best_d) {
+            best_d = d;
+            best = r.name;
+        }
+    }
+    region_name_ = best;
 }
 
 bool ExWorldGame::spawn_world_content() {
@@ -181,8 +227,11 @@ bool ExWorldGame::spawn_world_content() {
         }
         if (e->kind == exgine::NodeKind::Vehicle)
             vehicles_.register_vehicle(runtime, id, e->name, {});
-        if (e->kind == exgine::NodeKind::NPC && e->name != "DawnOfLight")
-            police_.register_unit(id);
+        // Cops: name prefix Cop_; other NPCs stay world flavor (police AI still tracks Cop_*)
+        if (e->kind == exgine::NodeKind::NPC) {
+            if (e->name.rfind("Cop_", 0) == 0)
+                police_.register_unit(id);
+        }
     }
     return true;
 }
@@ -280,6 +329,8 @@ bool ExWorldGame::update(double dt) noexcept {
         world_.set_stream_focus(pos, runtime);
         police_.update(static_cast<float>(dt), pos, wanted_.level(), runtime);
         update_camera(runtime);
+        update_region(pos);
+        hud_.update(player_, wanted_, player_.motion().speed, region_name_);
     }
 
     wanted_.update(static_cast<float>(dt), runtime);
