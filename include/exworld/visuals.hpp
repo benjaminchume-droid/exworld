@@ -7,6 +7,8 @@ namespace exworld {
 
 // Attaches real MeshAssembly geometry (characters, ground, HUD markers)
 // and ensures materials resolve so Renderer::build_frame draws them.
+// Uses EXGINE generate_character / generate_building / generate_vehicle
+// for multi-part real 3D assets at meter scale.
 class VisualSystem {
 public:
     bool bootstrap(exgine::Runtime& runtime, exgine::EntityId player);
@@ -24,6 +26,8 @@ private:
 
     bool ready_ = false;
     exgine::EntityId ground_ = exgine::invalid_entity;
+    exgine::EntityId ground_grass_ = exgine::invalid_entity;
+    exgine::EntityId ground_water_ = exgine::invalid_entity;
     exgine::EntityId hud_move_ = exgine::invalid_entity;
     exgine::EntityId hud_look_ = exgine::invalid_entity;
     exgine::EntityId hud_interact_ = exgine::invalid_entity;
