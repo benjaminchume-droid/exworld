@@ -1,6 +1,7 @@
 #pragma once
 
 #include "exgine/runtime.hpp"
+#include "exgine/world_render.hpp"
 
 namespace exworld {
 
@@ -20,6 +21,7 @@ public:
 
 private:
     exgine::Camera camera_{};
+    exgine::WorldRenderBridge world_render_{};
     float yaw_ = 0.55f;
     float pitch_ = -0.28f;
     float distance_ = 10.f;
