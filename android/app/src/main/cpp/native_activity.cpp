@@ -1,4 +1,4 @@
-// Unified EXWORLD Android entry (First Light path → same rules as platform/android)
+// EXWORLD Android — fixed scene URI resolution + never kill process on soft errors
 #include "exworld/game.hpp"
 
 #include "exgine/android.hpp"
@@ -14,13 +14,13 @@
 #include <algorithm>
 #include <cstdint>
 #include <ctime>
+#include <exception>
 #include <memory>
 #include <string>
 
 namespace {
 
 constexpr const char* kTag = "EXWORLD";
-
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, kTag, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, kTag, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, kTag, __VA_ARGS__)
@@ -43,12 +43,29 @@ bool read_asset(AAssetManager* m, std::string_view path, std::string& out) {
     return got >= 0 && static_cast<std::size_t>(got) == n;
 }
 
-bool load_asset(AAssetManager* m, std::string_view path, std::string& out) {
+// CRITICAL: EXGINE activate_scene() passes the scene *name* as the loader URI.
+// Map logical names to real asset paths so open_project can succeed.
+bool resolve_and_load(AAssetManager* m, std::string_view path, std::string& out) {
+    std::string p(path);
+    if (p.rfind("./", 0) == 0) p = p.substr(2);
+    if (p.rfind("content/", 0) == 0) p = p.substr(8);
+
+    // Name → path map (engine calls loader with startup_scene token)
+    if (p == "City" || p == "Main" || p == "CityScene")
+        p = "scenes/city.scene";
+    else if (p == "FirstLight" || p == "FirstLightScene")
+        p = "first_light/scenes/first_light.scene";
+
+    if (read_asset(m, p, out)) return true;
+    if (read_asset(m, std::string("content/") + p, out)) return true;
+    if (read_asset(m, std::string("first_light/") + p, out)) return true;
     if (read_asset(m, path, out)) return true;
-    std::string a = "content/"; a += path;
-    if (read_asset(m, a, out)) return true;
-    std::string b = "first_light/"; b += path;
-    return read_asset(m, b, out);
+    // bare name without extension
+    if (p.find('.') == std::string::npos) {
+        if (read_asset(m, p + ".scene", out)) return true;
+        if (read_asset(m, std::string("scenes/") + p + ".scene", out)) return true;
+    }
+    return false;
 }
 
 struct AppState {
@@ -77,7 +94,6 @@ void feed_touch(AppState* s, const AInputEvent* e, std::size_t i, bool down) {
 int32_t handle_input(android_app* app, AInputEvent* input) {
     auto* s = static_cast<AppState*>(app->userData);
     if (!s || !input || !s->game) return 0;
-
     if (AInputEvent_getType(input) == AINPUT_EVENT_TYPE_KEY) {
         const int action = AKeyEvent_getAction(input);
         if (action != AKEY_EVENT_ACTION_DOWN && action != AKEY_EVENT_ACTION_UP) return 0;
@@ -101,16 +117,13 @@ int32_t handle_input(android_app* app, AInputEvent* input) {
         if (mapped) { s->game->input().set_key(mapped, down); return 1; }
         return 0;
     }
-
     if (AInputEvent_getType(input) != AINPUT_EVENT_TYPE_MOTION) return 0;
     if ((AInputEvent_getSource(input) & AINPUT_SOURCE_CLASS_POINTER) == 0) return 0;
-
     const int32_t action = AMotionEvent_getAction(input);
     const int32_t type = action & AMOTION_EVENT_ACTION_MASK;
     const std::size_t idx = static_cast<std::size_t>(
         (action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT);
     const std::size_t count = AMotionEvent_getPointerCount(input);
-
     if (type == AMOTION_EVENT_ACTION_DOWN || type == AMOTION_EVENT_ACTION_POINTER_DOWN) {
         if (idx < count) feed_touch(s, input, idx, true);
         return 1;
@@ -134,22 +147,19 @@ void handle_cmd(android_app* app, int32_t cmd) {
     case APP_CMD_RESUME: s->mobile.on_resume(); break;
     case APP_CMD_PAUSE: s->mobile.on_pause(); break;
     case APP_CMD_STOP:
-        s->mobile.on_stop();
-        s->audio.stop();
-        s->started = false;
-        break;
+        s->mobile.on_stop(); s->audio.stop(); s->started = false; break;
     case APP_CMD_INIT_WINDOW:
         if (app->window && s->presenter.attach(app->window)) {
             s->mobile.on_surface_available();
             s->width = ANativeWindow_getWidth(app->window);
             s->height = ANativeWindow_getHeight(app->window);
             LOGI("surface %dx%d", s->width, s->height);
+        } else {
+            LOGE("presenter.attach failed: %s", s->presenter.last_error().c_str());
         }
         break;
     case APP_CMD_TERM_WINDOW:
-        s->mobile.on_surface_lost();
-        s->presenter.detach();
-        break;
+        s->mobile.on_surface_lost(); s->presenter.detach(); break;
     case APP_CMD_WINDOW_RESIZED:
     case APP_CMD_CONTENT_RECT_CHANGED:
         (void)s->presenter.resize();
@@ -163,46 +173,53 @@ void handle_cmd(android_app* app, int32_t cmd) {
 }
 
 bool boot_game(AppState& state) {
-    auto loader = [&state](std::string_view path, std::string& out) -> bool {
-        std::string p(path);
-        if (p.rfind("./", 0) == 0) p = p.substr(2);
-        if (p.rfind("content/", 0) == 0) p = p.substr(8);
-        return load_asset(state.assets, p, out) || load_asset(state.assets, path, out);
-    };
+    try {
+        auto loader = [&state](std::string_view path, std::string& out) -> bool {
+            const bool ok = resolve_and_load(state.assets, path, out);
+            LOGI("asset [%.*s] -> %s (%zu)", (int)path.size(), path.data(),
+                 ok ? "ok" : "MISS", out.size());
+            return ok;
+        };
 
-    state.game = std::make_unique<exworld::ExWorldGame>(loader);
+        state.game = std::make_unique<exworld::ExWorldGame>(loader);
 
-    // Prefer merged city project; fall back to First Light
-    std::string manifest;
-    if (!load_asset(state.assets, "project.exg", manifest) &&
-        !load_asset(state.assets, "first_light/project.exg", manifest)) {
-        state.boot_error = "no project.exg in APK assets";
+        std::string manifest;
+        if (!resolve_and_load(state.assets, "project.exg", manifest) &&
+            !resolve_and_load(state.assets, "first_light/project.exg", manifest)) {
+            state.boot_error = "project.exg missing from APK assets";
+            LOGE("%s", state.boot_error.c_str());
+            return false;
+        }
+        LOGI("manifest %zu bytes", manifest.size());
+
+        if (!state.game->open_from_manifest(manifest)) {
+            state.boot_error = "open_from_manifest failed (scene URI / compile)";
+            LOGE("%s", state.boot_error.c_str());
+            return false;
+        }
+        LOGI("boot OK");
+        return true;
+    } catch (const std::exception& e) {
+        state.boot_error = std::string("exception: ") + e.what();
+        LOGE("%s", state.boot_error.c_str());
+        return false;
+    } catch (...) {
+        state.boot_error = "unknown exception during boot";
         LOGE("%s", state.boot_error.c_str());
         return false;
     }
-    LOGI("manifest loaded (%zu bytes)", manifest.size());
-
-    if (!state.game->open_from_manifest(manifest)) {
-        state.boot_error = "open_from_manifest failed";
-        LOGE("%s", state.boot_error.c_str());
-        return false;
-    }
-    LOGI("boot OK (Sebastian + DawnOfLight)");
-    return true;
 }
 
 } // namespace
 
 void android_main(android_app* app) {
-    LOGI("android_main enter (merged)");
+    LOGI("android_main enter");
     AppState state;
     state.assets = app->activity ? app->activity->assetManager : nullptr;
 
     state.boot_ok = boot_game(state);
-    if (!state.boot_ok) {
-        LOGE("Boot failed: %s — keeping process alive", state.boot_error.c_str());
-        // NEVER return here — that was the exit bug
-    }
+    if (!state.boot_ok)
+        LOGE("Boot failed: %s — process stays alive (black screen)", state.boot_error.c_str());
 
     if (!state.audio.start()) LOGW("AAudio unavailable");
 
@@ -234,19 +251,29 @@ void android_main(android_app* app) {
                               ? std::clamp(now - state.previous_time, 0.0, 0.05)
                               : 1.0 / 60.0;
         state.previous_time = now;
-
         if (state.mobile.begin_frame(now).state == exgine::MobileFrameState::Paused) continue;
 
         if (!state.started) {
-            state.started = state.game->start();
+            try {
+                state.started = state.game->start();
+            } catch (...) {
+                LOGE("start() threw");
+                state.started = false;
+            }
             if (!state.started) {
-                LOGE("start() failed — retrying");
+                LOGE("start() failed — retry");
                 continue;
             }
             LOGI("game started");
         }
 
-        if (!state.game->update(dt)) continue;
-        (void)state.game->present(state.presenter, state.width, state.height);
+        try {
+            if (!state.game->update(dt)) continue;
+            (void)state.game->present(state.presenter, state.width, state.height);
+        } catch (const std::exception& e) {
+            LOGE("frame exception: %s", e.what());
+        } catch (...) {
+            LOGE("frame unknown exception");
+        }
     }
 }

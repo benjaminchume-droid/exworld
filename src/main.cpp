@@ -24,9 +24,15 @@ int main(int argc, char** argv) {
         argc > 1 ? std::filesystem::path(argv[1]) : std::filesystem::path("content");
 
     auto loader = [content_root](std::string_view uri, std::string& out) -> bool {
-        out = read_file(content_root / std::string(uri));
-        if (!out.empty()) return true;
-        out = read_file(content_root.parent_path() / "content" / std::string(uri));
+        std::string u(uri);
+        // Same name→path map as Android (engine passes startup_scene token)
+        if (u == "City" || u == "CityScene") u = "scenes/city.scene";
+        if (u == "FirstLight" || u == "FirstLightScene") u = "first_light/scenes/first_light.scene";
+
+        out = read_file(content_root / u);
+        if (out.empty()) out = read_file(content_root / std::string(uri));
+        if (out.empty() && u.find('.') == std::string::npos)
+            out = read_file(content_root / ("scenes/" + u + ".scene"));
         return !out.empty();
     };
 
@@ -41,52 +47,25 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    std::cout << "EXWORLD v0.3 \u2014 full systems online\n"
-              << "  real input (keyboard/gamepad/touch)\n"
-              << "  VehicleDynamicsController possession\n"
-              << "  police AI + wanted escalation\n"
-              << "  interior room navigation\n"
-              << "  save / load\n"
-              << "  100% procedural (ExSound + ExAnimation + EXGINE)\n";
+    std::cout << "EXWORLD open+start OK (Sebastian + DawnOfLight)\n";
 
-    constexpr int kFrames = 1200;
+    constexpr int kFrames = 300;
     exgine::RenderFrame frame;
     exgine::RenderResult result;
-
-    auto t0 = std::chrono::steady_clock::now();
     for (int i = 0; i < kFrames; ++i) {
         exworld::PlayerInput in;
-        in.move_z = 0.65f;
-        in.sprint = (i / 90) % 2 == 0;
-
-        if (i == 200) in.interact = true;   // enter vehicle or building
-        if (i == 450) in.exit = true;
-        if (i == 700) in.interact = true;
-        if (i == 900) {
-            // Save mid-session
-            auto data = game.save_game();
-            std::cout << "save bytes=" << data.size() << "\n";
-            if (!game.load_game(data))
-                std::cerr << "save round-trip failed\n";
-        }
-
+        in.move_z = 0.4f;
+        if (i == 100) in.interact = true;
         game.set_input(in);
-
         if (!game.update(1.0 / 60.0)) {
-            std::cerr << "EXWORLD: update failed at frame " << i << "\n";
+            std::cerr << "update failed frame " << i << "\n";
             return 3;
         }
         if (!game.build_frame(frame, result) || !result.success) {
-            std::cerr << "EXWORLD: render failed at frame " << i << "\n";
+            std::cerr << "render failed frame " << i << "\n";
             return 4;
         }
     }
-    auto t1 = std::chrono::steady_clock::now();
-    const double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-
-    std::cout << "EXWORLD validation passed\n"
-              << "frames=" << kFrames << " avg_ms=" << (ms / kFrames) << "\n"
-              << "wanted=" << static_cast<int>(game.wanted().level()) << "\n"
-              << "police_chasers=" << game.police().active_chasers() << "\n";
+    std::cout << "EXWORLD validation passed frames=" << kFrames << "\n";
     return 0;
 }

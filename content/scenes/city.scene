@@ -1,114 +1,25 @@
-game "EXWORLD" {
-  world "City" {
-    terrain "CityTerrain" {
-      amplitude = 14
-      seed = 90210
-      sea_level = -2
-    }
+world City {
+    terrain CityTerrain { amplitude = 14 seed = 90210 chunk_size = 32 resolution = 33 sea_level = -2 }
 
-    // Playable protagonist
-    player "Sebastian" {
-      x = 0
-      y = 1.1
-      z = 0
-    }
+    player Sebastian { x = 0 y = 1.1 z = 0 }
+    npc DawnOfLight { x = 3 y = 1.1 z = 2 }
 
-    // Companion / Dawn of Light (from First Light merge)
-    npc "DawnOfLight" {
-      x = 3
-      y = 1.1
-      z = 2
-    }
+    building ApartmentBlock_A { x = 18 y = 0 z = -10 floors = 5 rooms = 6 doors = 2 windows = 12 stairs = 1 furniture = 8 seed = 44001 }
+    building ApartmentBlock_B { x = 18 y = 0 z = 12 floors = 4 rooms = 5 doors = 2 windows = 10 stairs = 1 furniture = 6 seed = 44002 }
+    building Shop_C { x = -16 y = 0 z = 8 floors = 2 rooms = 3 doors = 1 windows = 6 stairs = 0 furniture = 4 seed = 44003 }
+    building Shop_D { x = -16 y = 0 z = -12 floors = 2 rooms = 4 doors = 1 windows = 6 stairs = 0 furniture = 4 seed = 44004 }
+    building Warehouse_E { x = 34 y = 0 z = 20 floors = 1 rooms = 5 doors = 2 windows = 4 stairs = 0 furniture = 3 seed = 44005 }
+    building Office_F { x = -30 y = 0 z = 0 floors = 6 rooms = 4 doors = 2 windows = 16 stairs = 1 furniture = 10 seed = 44006 }
+    building Garage_G { x = 8 y = 0 z = 28 floors = 1 rooms = 2 doors = 2 windows = 2 stairs = 0 furniture = 2 seed = 44007 }
 
-    building "ApartmentBlock_A" {
-      floors = 5
-      rooms_per_floor = 6
-      seed = 44001
-      x = 18
-      z = -10
-    }
-    building "ApartmentBlock_B" {
-      floors = 4
-      rooms_per_floor = 5
-      seed = 44002
-      x = 18
-      z = 12
-    }
-    building "Shop_C" {
-      floors = 2
-      rooms_per_floor = 3
-      seed = 44003
-      x = -16
-      z = 8
-    }
-    building "Shop_D" {
-      floors = 2
-      rooms_per_floor = 4
-      seed = 44004
-      x = -16
-      z = -12
-    }
-    building "Warehouse_E" {
-      floors = 1
-      rooms_per_floor = 5
-      seed = 44005
-      x = 34
-      z = 20
-    }
-    building "Office_F" {
-      floors = 6
-      rooms_per_floor = 4
-      seed = 44006
-      x = -30
-      z = 0
-    }
-    building "Garage_G" {
-      floors = 1
-      rooms_per_floor = 2
-      seed = 44007
-      x = 8
-      z = 28
-    }
+    vehicle StreetCar_01 { x = 6 y = 0.4 z = 5 type = Car }
+    vehicle StreetCar_02 { x = -8 y = 0.4 z = -5 type = Car }
+    vehicle Sports_03 { x = 12 y = 0.35 z = -18 type = SportsCar }
+    vehicle SUV_04 { x = -22 y = 0.45 z = 15 type = SUV }
+    vehicle Pickup_05 { x = 25 y = 0.5 z = 8 type = Pickup }
 
-    vehicle "StreetCar_01" {
-      type = "Car"
-      seed = 77001
-      x = 6
-      y = 0.4
-      z = 5
-    }
-    vehicle "StreetCar_02" {
-      type = "Car"
-      seed = 77002
-      x = -8
-      y = 0.4
-      z = -5
-    }
-    vehicle "Sports_03" {
-      type = "SportsCar"
-      seed = 77003
-      x = 12
-      y = 0.35
-      z = -18
-    }
-    vehicle "SUV_04" {
-      type = "SUV"
-      seed = 77004
-      x = -22
-      y = 0.45
-      z = 15
-    }
-    vehicle "Pickup_05" {
-      type = "Pickup"
-      seed = 77005
-      x = 25
-      y = 0.5
-      z = 8
-    }
-
-    npc "Pedestrian_01" { x = 4  y = 1 z = 9 }
-    npc "Pedestrian_02" { x = -5 y = 1 z = -3 }
-    npc "Pedestrian_03" { x = 10 y = 1 z = -8 }
-    npc "Pedestrian_04" { x = -12 y = 1 z = 6 }
-  }
+    npc Pedestrian_01 { x = 4 y = 1 z = 9 }
+    npc Pedestrian_02 { x = -5 y = 1 z = -3 }
+    npc Pedestrian_03 { x = 10 y = 1 z = -8 }
+    npc Pedestrian_04 { x = -12 y = 1 z = 6 }
 }
