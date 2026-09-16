@@ -1,0 +1,82 @@
+name: Build EXWORLD First Light APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'CMakeLists.txt'
+      - 'include/**'
+      - 'src/**'
+      - 'content/first_light/**'
+      - 'android/**'
+      - '.github/workflows/build-first-light-apk.yml'
+
+jobs:
+  android-apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout EXWORLD
+        uses: actions/checkout@v4
+        with:
+          path: exworld
+
+      - name: Checkout EXGINE
+        uses: actions/checkout@v4
+        with:
+          repository: benjaminchume-droid/exgine
+          path: exgine
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android build dependencies
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager \
+            'platform-tools' \
+            'platforms;android-35' \
+            'build-tools;35.0.0' \
+            'ndk;27.2.12479018' \
+            'cmake;3.22.1'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build installable debug APK
+        working-directory: exworld/android
+        run: |
+          gradle --no-daemon clean assembleDebug -PEXGINE_ROOT="$GITHUB_WORKSPACE/exgine"
+
+      - name: Verify APK package and signature
+        run: |
+          APK="exworld/android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          unzip -t "$APK" >/dev/null
+          ls -lh "$APK"
+
+      - name: Rename installable artifact
+        run: |
+          mkdir -p artifacts
+          cp exworld/android/app/build/outputs/apk/debug/app-debug.apk artifacts/EXWORLD-First-Light.apk
+
+      - name: Upload installable First Light APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: exworld-first-light-apk
+          path: artifacts/EXWORLD-First-Light.apk
+          if-no-files-found: error
+          retention-days: 14
