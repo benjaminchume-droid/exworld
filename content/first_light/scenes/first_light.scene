@@ -1,0 +1,16 @@
+world FirstLightWorld {
+    terrain FirstLightTerrain { amplitude = 32 seed = 93107 chunk_size = 32 resolution = 33 sea_level = 0 }
+    player Explorer { x = 7.5 y = 3 z = 12 }
+    npc SentinelNorth { x = 22 y = 2 z = 10 }
+    npc SentinelEast { x = -12 y = 2 z = 18 }
+    npc Guide { x = 11 y = 1 z = 7 }
+    building Outpost { x = 0 y = 0 z = 0 floors = 2 rooms = 8 doors = 4 windows = 14 stairs = 1 furniture = 10 seed = 93107 }
+    vehicle ScoutRunner { x = 18 y = 1 z = 3 type = SportsCar }
+    prop HouseAsset { x = -7 y = 0 z = 2 }
+    prop RainFX { x = 0 y = 0 z = 0 }
+    prop PhysicsCrate { x = 2 y = 5 z = 2 }
+    prop HUDCrosshair { x = 7.5 y = 5.2 z = 11.5 }
+    prop HUDHealth { x = 7.5 y = 4.75 z = 11.5 }
+    prop BeaconWest { x = -18 y = 3 z = -10 }
+    prop BeaconSouth { x = 10 y = 3 z = -22 }
+}
