@@ -146,6 +146,7 @@ bool ExWorldGame::configure_systems() {
     player_.bind(runtime, player_id, cid);
 
     (void)load_baked_packages();
+    visuals_.set_packages(&packages_);
 
     const auto pos = player_.position(runtime);
     if (!ensure_render_basics(runtime, pos)) {
