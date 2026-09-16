@@ -1,6 +1,7 @@
 #pragma once
 
 #include "exgine/runtime.hpp"
+#include "exgine/world_render.hpp"
 
 #include <string>
 #include <vector>
@@ -29,9 +30,13 @@ public:
     void set_stream_focus(const exgine::Vec3& pos, exgine::Runtime& runtime);
 
     [[nodiscard]] std::size_t building_count() const noexcept { return doors_.size(); }
+    [[nodiscard]] std::size_t streamed_terrain_count() const noexcept { return render_bridge_.terrain_entities(); }
+    [[nodiscard]] std::size_t streamed_water_count() const noexcept { return render_bridge_.water_entities(); }
 
 private:
     std::vector<BuildingDoor> doors_;
+    exgine::WorldRenderBridge render_bridge_;
+    exgine::Runtime* runtime_ = nullptr;
 };
 
 } // namespace exworld
