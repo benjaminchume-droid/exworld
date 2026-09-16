@@ -1,4 +1,4 @@
-# EXWORLD baked package index (pre-generated in CI, shipped in APK)
+# EXWORLD baked package index (pre-generated, shipped in APK)
 # Units: meters. Origin: Downtown plaza.
 package = downtown,baked/downtown.exg,1.0,city
 package = forest,baked/forest.exg,1.0,biome
@@ -7,8 +7,12 @@ package = swamp,baked/swamp.exg,1.0,biome
 package = vehicles,baked/vehicles.exg,1.0,props
 package = animation,baked/animation.exg,1.0,anim
 package = sound,baked/sound.exg,1.0,audio
+package = character,baked/character.exg,1.0,mesh
+package = vehicle_sedan,baked/vehicle_sedan.exg,1.0,mesh
+package = building,baked/building.exg,1.0,mesh
+package = ground,baked/ground.exg,1.0,mesh
 scale = meters
-player_height = 1.80
+player_height = 1.75
 car_length = 4.50
 car_width = 1.85
 floor_height = 3.00

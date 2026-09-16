@@ -1,16 +1,17 @@
 #pragma once
 
 #include "exgine/runtime.hpp"
+#include "exworld/asset_package.hpp"
 #include "exworld/hud.hpp"
 
 namespace exworld {
 
-// Attaches real MeshAssembly geometry (characters, ground, HUD markers)
-// and ensures materials resolve so Renderer::build_frame draws them.
-// Uses EXGINE generate_character / generate_building / generate_vehicle
-// for multi-part real 3D assets at meter scale.
+// Attaches real MeshAssembly geometry from baked .exg packages (OBJ multipart)
+// with fallback to EXGINE generate_character / generate_building / generate_vehicle.
 class VisualSystem {
 public:
+    void set_packages(const AssetPackageRegistry* packages) noexcept { packages_ = packages; }
+
     bool bootstrap(exgine::Runtime& runtime, exgine::EntityId player);
     void update_hud_markers(exgine::Runtime& runtime, const exgine::Camera& cam,
                             const HudLayout& layout, int screen_w, int screen_h);
@@ -25,6 +26,7 @@ private:
     bool ensure_buildings_vehicles(exgine::Runtime& runtime);
 
     bool ready_ = false;
+    const AssetPackageRegistry* packages_ = nullptr;
     exgine::EntityId ground_ = exgine::invalid_entity;
     exgine::EntityId ground_grass_ = exgine::invalid_entity;
     exgine::EntityId ground_water_ = exgine::invalid_entity;
