@@ -6,7 +6,6 @@ namespace exworld {
 
 void World::bootstrap(exgine::Runtime& runtime) {
     runtime_ = &runtime;
-    (void)render_bridge_.sync(runtime, {0.f, 0.f, 0.f});
 }
 
 void World::clear() {
