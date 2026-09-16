@@ -1,0 +1,67 @@
+game "EXWORLD" {
+  world "City" {
+    terrain "CityTerrain" {
+      amplitude = 12
+      seed = 90210
+      sea_level = -2
+    }
+
+    player "Player" {
+      x = 0
+      y = 1.1
+      z = 0
+    }
+
+    building "ApartmentBlock_A" {
+      floors = 4
+      rooms_per_floor = 6
+      seed = 44001
+      x = 18
+      z = -8
+    }
+
+    building "Shop_B" {
+      floors = 2
+      rooms_per_floor = 3
+      seed = 44002
+      x = -14
+      z = 12
+    }
+
+    building "Warehouse_C" {
+      floors = 1
+      rooms_per_floor = 4
+      seed = 44003
+      x = 32
+      z = 22
+    }
+
+    vehicle "StreetCar_01" {
+      type = "Car"
+      seed = 77001
+      x = 6
+      y = 0.4
+      z = 4
+    }
+
+    vehicle "StreetCar_02" {
+      type = "Car"
+      seed = 77002
+      x = -9
+      y = 0.4
+      z = -6
+    }
+
+    npc "Pedestrian_01" {
+      x = 4
+      y = 1
+      z = 9
+    }
+
+    npc "Pedestrian_02" {
+      x = -5
+      y = 1
+      z = -3
+    }
+  }
+}
