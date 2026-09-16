@@ -43,6 +43,18 @@ exgine::MeshAssembly capsule_body(float height, std::string material) {
     return a;
 }
 
+// entities.create does NOT allocate a scene node — without one, Renderer::build_frame
+// returns false for the entire frame.
+exgine::EntityId spawn_prop(exgine::Runtime& runtime, const char* name) {
+    const auto id = runtime.state().entities.create(exgine::NodeKind::Property, name);
+    if (!id) return exgine::invalid_entity;
+    auto* e = runtime.state().entities.get(id);
+    if (!e) return exgine::invalid_entity;
+    e->scene_node = runtime.scene().create(runtime.scene().root());
+    if (!e->scene_node) return exgine::invalid_entity;
+    return id;
+}
+
 void set_entity_pos(exgine::Runtime& runtime, exgine::EntityId id, float x, float y, float z) {
     auto* e = runtime.state().entities.get(id);
     if (!e) return;
@@ -88,7 +100,6 @@ bool VisualSystem::ensure_character(exgine::Runtime& runtime, exgine::EntityId i
 
     exgine::CharacterDefinition def;
     def.type = is_player ? exgine::CharacterType::Player : exgine::CharacterType::NPC;
-    // 1.75m adult — intentionally human-scale vs 3m floor heights / 14m buildings
     def.appearance.height = is_player ? 1.75f : 1.70f;
     def.appearance.build = 1.0f;
     def.appearance.seed = is_player ? 4242ull : (1000ull + static_cast<std::uint64_t>(id));
@@ -109,17 +120,16 @@ bool VisualSystem::ensure_character(exgine::Runtime& runtime, exgine::EntityId i
 
 bool VisualSystem::ensure_ground(exgine::Runtime& runtime, const exgine::Vec3& at) {
     if (ground_ == exgine::invalid_entity)
-        ground_ = runtime.state().entities.create(exgine::NodeKind::Property, "GroundPlate");
+        ground_ = spawn_prop(runtime, "GroundPlate");
     if (!ground_) return false;
     set_entity_pos(runtime, ground_, at.x, -0.05f, at.z);
-    auto mesh = box_mesh({500.f, 0.12f, 500.f}, "asphalt");
-    return runtime.attach_geometry(ground_, std::move(mesh));
+    return runtime.attach_geometry(ground_, box_mesh({500.f, 0.12f, 500.f}, "asphalt"));
 }
 
 bool VisualSystem::ensure_hud_entities(exgine::Runtime& runtime) {
     auto make = [&](exgine::EntityId& slot, const char* name, float w, float h) {
         if (slot == exgine::invalid_entity)
-            slot = runtime.state().entities.create(exgine::NodeKind::Property, name);
+            slot = spawn_prop(runtime, name);
         if (!slot) return false;
         return runtime.attach_geometry(slot, quad_mesh(w, h, "hud"));
     };
@@ -206,10 +216,10 @@ void VisualSystem::update_hud_markers(exgine::Runtime& runtime, const exgine::Ca
         if (!id) return;
         const float ox = ndc_x * 1.15f;
         const float oy = ndc_y * 0.7f;
-        const float x = cam.position.x + fx * dist + rx * ox + ux * oy;
-        const float y = cam.position.y + fy * dist + uy * oy;
-        const float z = cam.position.z + fz * dist + rz * ox + uz * oy;
-        set_entity_pos(runtime, id, x, y, z);
+        set_entity_pos(runtime, id,
+                       cam.position.x + fx * dist + rx * ox + ux * oy,
+                       cam.position.y + fy * dist + uy * oy,
+                       cam.position.z + fz * dist + rz * ox + uz * oy);
     };
 
     place(hud_move_, -0.55f, -0.45f);
