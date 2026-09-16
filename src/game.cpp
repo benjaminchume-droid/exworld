@@ -2,6 +2,7 @@
 
 #include "exgine/android.hpp"
 #include "exgine/render.hpp"
+#include "exgine/materials.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -44,8 +45,39 @@ exgine::EntityId find_player_entity(exgine::Runtime& r) {
     }
     if (auto id = find_by_name(r, "Sebastian")) return id;
     if (auto id = find_by_kind(r, exgine::NodeKind::Player)) return id;
-    if (auto id = find_by_name(r, "DawnOfLight")) return id;
     return exgine::invalid_entity;
+}
+
+bool ensure_render_basics(exgine::Runtime& runtime, const exgine::Vec3& focus) {
+    // Camera (required by Renderer::build_frame)
+    exgine::Camera cam;
+    cam.position = {focus.x - 4.f, focus.y + 2.5f, focus.z + 4.f};
+    cam.rotation = {-0.25f, 0.6f, 0.f};
+    cam.vertical_fov_degrees = 58.f;
+    cam.near_plane = 0.08f;
+    cam.far_plane = 4000.f;
+    if (!runtime.set_main_camera(cam)) {
+        std::cerr << "EXWORLD: set_main_camera failed\n";
+        return false;
+    }
+
+    // Sun
+    exgine::Light sun;
+    sun.type = exgine::LightType::Directional;
+    sun.direction = {-0.45f, -0.78f, -0.2f};
+    sun.color = {1.f, 0.92f, 0.78f};
+    sun.intensity = 4.f;
+    (void)runtime.create_light(sun);
+
+    // Materials so geometry parts resolve (build_frame returns false on missing material)
+    (void)runtime.define_material(exgine::make_real_world_material("concrete", 11));
+    (void)runtime.define_material(exgine::make_real_world_material("asphalt", 22));
+    (void)runtime.define_material(exgine::make_real_world_material("metal", 33));
+    (void)runtime.define_material(exgine::make_real_world_material("paint", 44));
+    (void)runtime.define_material(exgine::make_real_world_material("glass", 55));
+    (void)runtime.define_material(exgine::make_real_world_material("skin", 66));
+    (void)runtime.define_material(exgine::make_real_world_material("exworld_surface", 77));
+    return true;
 }
 
 } // namespace
@@ -79,10 +111,7 @@ bool ExWorldGame::open_from_manifest(std::string_view manifest_text) {
         return false;
     }
 
-    // open_project already transitions to MainMenu / PlayableStatus::Menu.
-    // Do NOT require show_menu() — can_transition(MainMenu→MainMenu) is false
-    // and was causing open() to fail on every successful project load.
-    (void)engine_.show_menu();
+    (void)engine_.show_menu(); // may fail if already Menu — ignore
 
     if (!configure_systems()) {
         std::cerr << "EXWORLD: configure_systems soft-failed (continuing)\n";
@@ -98,6 +127,7 @@ bool ExWorldGame::start() noexcept {
     if (ready_ && player_.valid()) {
         auto& runtime = engine_.session().game().runtime();
         camera_.reset(player_.position(runtime));
+        (void)runtime.set_main_camera(camera_.camera());
     }
     return ready_;
 }
@@ -118,8 +148,13 @@ bool ExWorldGame::configure_systems() {
 
     player_.bind(runtime, player_id, cid);
 
+    const auto pos = player_.position(runtime);
+    if (!ensure_render_basics(runtime, pos)) {
+        std::cerr << "EXWORLD: render basics failed\n";
+    }
+
     if (!animation_.initialize(runtime, player_id)) {
-        std::cerr << "EXWORLD: AnimationDriver unavailable (running without clips)\n";
+        std::cerr << "EXWORLD: AnimationDriver unavailable (ok)\n";
     }
 
     sound_.initialize(runtime);
@@ -269,7 +304,12 @@ bool ExWorldGame::present(exgine::AndroidEglPresenter& presenter, int width, int
     const std::uint32_t h = height > 0 ? static_cast<std::uint32_t>(height) : 720u;
     exgine::RenderFrame frame;
     exgine::Renderer renderer({exgine::RenderBackend::OpenGLES, w, h, true, true, 256, 128});
-    if (!renderer.build_frame(engine_.session().game().runtime(), frame)) return false;
+    auto& rt = engine_.session().game().runtime();
+    if (!renderer.build_frame(rt, frame)) {
+        // Last-resort: still try a camera-only frame so EGL keeps swapping
+        (void)ensure_render_basics(rt, player_.valid() ? player_.position(rt) : exgine::Vec3{0, 2, 0});
+        if (!renderer.build_frame(rt, frame)) return false;
+    }
     if (!renderer.validate(frame)) return false;
     return presenter.present(frame);
 }

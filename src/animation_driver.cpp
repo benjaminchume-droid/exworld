@@ -12,23 +12,17 @@ bool AnimationDriver::initialize(exgine::Runtime& runtime, exgine::EntityId enti
         return false;
     }
 
-    if (!runtime.attach_skeleton(entity_, skeleton_)) {
-        std::cerr << "EXWORLD: attach_skeleton failed (continuing without attach)\n";
-        // still try to generate clips for later
-    }
-
+    // CRITICAL: do NOT attach_skeleton unless a skinned mesh is also present.
+    // Renderer::build_frame does:
+    //   if (sm || pose || sk) { require sm && pose && sk; else return false; }
+    // Attaching a skeleton alone makes EVERY frame fail to build/present.
+    // Clips can still be defined for later once a mesh exists.
     exanim_ = std::make_unique<exgine::ExAnimation>(skeleton_);
-    if (!generate_clips(runtime)) {
-        std::cerr << "EXWORLD: generate_clips partial/failed\n";
-        // allow running with whatever clips succeeded
-    }
+    (void)generate_clips(runtime);
 
     state_ = AnimState::Idle;
-    if (idle_clip_)
-        (void)runtime.play_animation(entity_, idle_clip_, 0.1f);
-
-    // Success if we at least have a skeleton — clips are best-effort
-    return skeleton_.valid();
+    // Do not play_animation without an attached skeleton + mesh
+    return true;
 }
 
 bool AnimationDriver::generate_clips(exgine::Runtime& runtime) {
@@ -90,6 +84,18 @@ void AnimationDriver::play_exit_building(float duration) {
 
 void AnimationDriver::update(float dt, const exgine::MotionState& motion, exgine::Runtime& runtime) {
     if (entity_ == exgine::invalid_entity || dt <= 0.f) return;
+
+    // Without attached skeleton + skinned mesh, skip play_animation to keep renderer healthy
+    const auto* sk = runtime.skeleton(entity_);
+    const auto* sm = runtime.skinned_mesh(entity_);
+    if (!sk || !sm) {
+        // still track logical state for gameplay
+        if (action_playing_) {
+            action_timer_ += dt;
+            if (action_timer_ >= action_duration_) action_playing_ = false;
+        }
+        return;
+    }
 
     if (action_playing_) {
         action_timer_ += dt;
