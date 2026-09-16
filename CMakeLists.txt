@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(exworld VERSION 0.2.0 LANGUAGES CXX)
+project(exworld VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -27,6 +27,10 @@ add_executable(exworld
   src/sound_director.cpp
   src/camera.cpp
   src/wanted.cpp
+  src/input.cpp
+  src/police.cpp
+  src/interior.cpp
+  src/save.cpp
 )
 
 target_include_directories(exworld PRIVATE

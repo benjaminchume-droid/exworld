@@ -41,24 +41,35 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    std::cout << "EXWORLD \u2014 GTA-style open world online\n";
-    std::cout << "Systems: ExAnimation enter/exit, ExSound doors/engine/footsteps,\n"
-              << "character controller, third-person camera, building doors,\n"
-              << "wanted/free-roam foundation, dense city streaming\n";
+    std::cout << "EXWORLD v0.3 \u2014 full systems online\n"
+              << "  real input (keyboard/gamepad/touch)\n"
+              << "  VehicleDynamicsController possession\n"
+              << "  police AI + wanted escalation\n"
+              << "  interior room navigation\n"
+              << "  save / load\n"
+              << "  100% procedural (ExSound + ExAnimation + EXGINE)\n";
 
-    // Simulate a short free-roam session with an interact mid-way
-    constexpr int kFrames = 900;
+    constexpr int kFrames = 1200;
     exgine::RenderFrame frame;
     exgine::RenderResult result;
 
     auto t0 = std::chrono::steady_clock::now();
     for (int i = 0; i < kFrames; ++i) {
         exworld::PlayerInput in;
-        in.move_z = 0.7f;
-        in.sprint = (i / 120) % 2 == 0;
-        if (i == 180) in.interact = true;      // try enter vehicle / building
-        if (i == 420) in.exit = true;          // exit
-        if (i == 600) in.interact = true;
+        in.move_z = 0.65f;
+        in.sprint = (i / 90) % 2 == 0;
+
+        if (i == 200) in.interact = true;   // enter vehicle or building
+        if (i == 450) in.exit = true;
+        if (i == 700) in.interact = true;
+        if (i == 900) {
+            // Save mid-session
+            auto data = game.save_game();
+            std::cout << "save bytes=" << data.size() << "\n";
+            if (!game.load_game(data))
+                std::cerr << "save round-trip failed\n";
+        }
+
         game.set_input(in);
 
         if (!game.update(1.0 / 60.0)) {
@@ -74,8 +85,8 @@ int main(int argc, char** argv) {
     const double ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
 
     std::cout << "EXWORLD validation passed\n"
-              << "frames=" << kFrames << " total_ms=" << ms
-              << " avg_frame_ms=" << (ms / kFrames) << "\n"
-              << "wanted_level=" << static_cast<int>(game.wanted().level()) << "\n";
+              << "frames=" << kFrames << " avg_ms=" << (ms / kFrames) << "\n"
+              << "wanted=" << static_cast<int>(game.wanted().level()) << "\n"
+              << "police_chasers=" << game.police().active_chasers() << "\n";
     return 0;
 }

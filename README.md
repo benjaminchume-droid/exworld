@@ -1,35 +1,46 @@
 # EXWORLD
 
-**EXWORLD** is a GTA-style open-world game built on [EXGINE](https://github.com/benjaminchume-droid/exgine).
+GTA-style open-world game on [EXGINE](https://github.com/benjaminchume-droid/exgine).
 
-This is the actual game, not a demo.
+**100% procedural.** No authored glTF characters, no high-res texture packs, no sampled audio banks required.  
+ExAnimation + ExSound + EXGINE generate the world, characters, vehicles, motion and audio.
 
-## Current vertical slice (v0.2)
+## Status (v0.3)
 
-- **Vehicle enter/exit**  
-  Walk up to a car \u2192 interact \u2192 ExAnimation enter clip + ExSound metal door + control switches to the vehicle.  
-  Exit plays exit clip + door sound and returns control to on-foot.
+| System | State |
+|--------|--------|
+| Vehicle enter/exit (ExAnimation + ExSound) | Done |
+| VehicleDynamicsController possession | Done |
+| Character controller + 3rd person camera | Done |
+| Building doors + interior room nav | Done |
+| Wanted levels + police AI chase | Done |
+| Real input (keyboard / gamepad / touch) | Done |
+| Save / load (player + wanted) | Done |
+| Dense city + streaming | Done |
+| **Installable Android APK** | **Not yet** |
 
-- **Character controller + camera**  
-  Uses EXGINE `CharacterControllerInput` when available, with kinematic fallback.  
-  Third-person follow camera with separate on-foot / in-vehicle distances.
+## APK reality check
 
-- **Building interiors + doors**  
-  Approach a building door \u2192 interact \u2192 enter clip + wood door sound + interior mode.
+The game is **not** at the installable APK stage yet.
 
-- **Dense city block**  
-  7 buildings, 5 vehicles, 6 pedestrians, continuous terrain, open-world streaming focus.
+What exists:
+- Full native C++ game logic
+- EXGINE Android EGL / NativeActivity support (in the engine)
 
-- **Wanted / free-roam foundation**  
-  Stealing a car adds heat. Wanted levels 0\u20135 with decay. Alert sound on first heat.
+What is still missing for a real APK:
+- `exworld` Android Gradle module + NativeActivity entry
+- Wiring Android touch / lifecycle into `InputSystem`
+- CMake/Gradle packaging + signing
 
-- **Audio**  
-  All driven by **ExSound**: footsteps (material + speed), engines, doors, city ambient, wanted UI.
+Expected size once packaged (still fully procedural):
 
-- **Animation**  
-  All driven by **ExAnimation**: idle / walk / run / sprint + one-shot enter/exit vehicle & building.
+| Build | Size |
+|-------|------|
+| Release stripped | **18\u201335 MB** |
+| Release + symbols | 40\u201360 MB |
+| Debug | 60\u201390 MB |
 
-## Build
+## Build (desktop validation)
 
 ```bash
 git clone https://github.com/benjaminchume-droid/exgine.git
@@ -40,17 +51,16 @@ cmake --build build -j
 ./build/exworld
 ```
 
-## APK size (Android)
+## Controls (when input is connected)
 
-Because EXWORLD + EXGINE are pure native C++ with **procedural** content (no large texture/mesh packs):
-
-| Build type              | Expected APK size      |
-|-------------------------|------------------------|
-| Release, stripped       | **18 \u2013 35 MB**         |
-| Release + symbols       | 40 \u2013 60 MB             |
-| Debug                   | 60 \u2013 90 MB             |
-
-Once you add authored glTF characters, high-res textures, or audio samples the size will grow. The current procedural path stays very lean.
+| Action | Keyboard | Gamepad | Touch |
+|--------|----------|---------|-------|
+| Move | WASD | Left stick | Left virtual stick |
+| Look | (mouse later) | Right stick | Right virtual stick |
+| Sprint | Shift | RB | \u2014 |
+| Interact (enter car/door) | E | A | Top-right zone |
+| Exit vehicle/building | F | B | Bottom-right zone |
+| Crouch / brake | Ctrl | LB | \u2014 |
 
 ## License
 

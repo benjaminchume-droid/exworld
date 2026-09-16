@@ -36,18 +36,38 @@ void VehicleController::update_driven(exgine::EntityId vehicle, float throttle, 
     auto* e = runtime.state().entities.get(vehicle);
     if (!e) return;
 
-    // Prefer engine vehicle dynamics when bound
-    auto& dyn = runtime.vehicle_dynamics();
-    auto it = dyn.find(vehicle);
-    if (it != dyn.end() && it->second) {
-        // Future: feed throttle/steer/brake into VehicleDynamicsController
-        // For now still advance a simple kinematic so the world stays alive
-    }
+    // Full VehicleDynamicsController possession when available
+    auto& dyn_map = runtime.vehicle_dynamics();
+    auto it = dyn_map.find(vehicle);
+    if (it != dyn_map.end() && it->second) {
+        exgine::VehicleInput vin;
+        vin.throttle = std::clamp(throttle, 0.f, 1.f);
+        vin.brake = std::clamp(brake, 0.f, 1.f);
+        vin.steering = std::clamp(steer, -1.f, 1.f);
+        vin.handbrake = false;
 
-    const float speed = (throttle - brake * 0.8f) * 16.0f;
-    const float yaw = steer * 1.2f;
-    e->transform.x += std::sin(yaw) * speed * dt;
-    e->transform.z += std::cos(yaw) * speed * dt;
+        (void)it->second->possess(true);
+        (void)it->second->set_input(vin);
+        (void)it->second->update(dt);
+
+        // Sync entity transform from physics body if possible
+        if (auto* phys = runtime.physics()) {
+            const auto body = it->second->state().body;
+            if (body) {
+                if (auto t = phys->body_transform(body)) {
+                    e->transform.x = t->position.x;
+                    e->transform.y = t->position.y;
+                    e->transform.z = t->position.z;
+                }
+            }
+        }
+    } else {
+        // Kinematic fallback
+        const float speed = (throttle - brake * 0.8f) * 16.0f;
+        const float yaw = steer * 1.2f;
+        e->transform.x += std::sin(yaw) * speed * dt;
+        e->transform.z += std::cos(yaw) * speed * dt;
+    }
 
     if (e->scene_node) {
         (void)runtime.scene().set_local_transform(
