@@ -1,0 +1,79 @@
+name: EXWORLD Android Debug APK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  android-debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout EXWORLD
+        uses: actions/checkout@v4
+        with:
+          path: exworld
+
+      - name: Checkout EXGINE
+        uses: actions/checkout@v4
+        with:
+          repository: benjaminchume-droid/exgine
+          path: exgine
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android packages
+        run: |
+          sdkmanager --install \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;27.2.12479018" \
+            "cmake;3.22.1"
+          yes | sdkmanager --licenses || true
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build debug APK
+        working-directory: exworld/platform/android
+        env:
+          EXGINE_ROOT: ${{ github.workspace }}/exgine
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/27.2.12479018
+        run: |
+          echo "EXGINE_ROOT=$EXGINE_ROOT"
+          ls -la "$EXGINE_ROOT" | head
+          gradle --no-daemon :app:assembleDebug
+
+      - name: Locate APK
+        id: apk
+        working-directory: exworld/platform/android
+        run: |
+          APK=$(find app/build/outputs/apk/debug -name '*.apk' | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "No debug APK found"
+            find app/build/outputs -type f || true
+            exit 1
+          fi
+          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
+          ls -lh "$APK"
+
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: exworld-android-debug
+          path: exworld/platform/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
