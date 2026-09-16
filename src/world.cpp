@@ -5,10 +5,14 @@
 namespace exworld {
 
 void World::bootstrap(exgine::Runtime& runtime) {
-    (void)runtime;
+    runtime_ = &runtime;
+    (void)render_bridge_.sync(runtime, {0.f, 0.f, 0.f});
 }
 
-void World::clear() { doors_.clear(); }
+void World::clear() {
+    if (runtime_) render_bridge_.clear(*runtime_);
+    doors_.clear();
+}
 
 void World::register_building(exgine::EntityId id, exgine::Vec3 door_pos, float radius) {
     BuildingDoor d;
@@ -48,8 +52,9 @@ BuildingDoor* World::door_mut(exgine::EntityId building) {
 }
 
 void World::set_stream_focus(const exgine::Vec3& pos, exgine::Runtime& runtime) {
+    runtime_ = &runtime;
     (void)runtime.stream_world(pos, 3);
-    (void)runtime.stream_open_world(pos);
+    (void)render_bridge_.sync(runtime, pos);
 }
 
 } // namespace exworld
