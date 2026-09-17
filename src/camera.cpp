@@ -4,10 +4,7 @@
 #include <cmath>
 
 namespace exworld {
-
-namespace {
-constexpr float kPi = 3.14159265358979323846f;
-}
+namespace { constexpr float kPi = 3.14159265358979323846f; }
 
 void GameCamera::reset(const exgine::Vec3& target) {
     const float cy = std::cos(yaw_);
@@ -21,10 +18,11 @@ void GameCamera::reset(const exgine::Vec3& target) {
     };
     initialized_ = true;
     camera_.position = current_pos_;
-    // EXGINE uses conventional camera forward (-Z), while the gameplay
-    // camera's yaw/pitch convention describes forward as +X/+Z. Convert
-    // between the two conventions at the game-camera boundary.
-    camera_.rotation = {-pitch_, kPi - yaw_, 0.f};
+    // Gameplay yaw 0 points along +Z. EXGINE's camera looks along -Z in
+    // camera space, so the equivalent world-space Euler yaw is yaw + PI.
+    // The previous PI - yaw conversion mirrored the horizontal direction as
+    // yaw changed, causing the Android camera to look away from the player.
+    camera_.rotation = {-pitch_, yaw_ + kPi, 0.f};
     camera_.vertical_fov_degrees = 55.f;
     camera_.near_plane = 0.1f;
     camera_.far_plane = 5000.f;
@@ -58,13 +56,10 @@ void GameCamera::update(float dt, const exgine::Vec3& target, bool in_vehicle,
     current_pos_.z += (desired.z - current_pos_.z) * t;
 
     camera_.position = current_pos_;
-    camera_.rotation = {-pitch_, kPi - yaw_, 0.f};
+    camera_.rotation = {-pitch_, yaw_ + kPi, 0.f};
     camera_.vertical_fov_degrees = in_vehicle ? 58.f : 55.f;
 
     (void)runtime.set_main_camera(camera_);
-
-    // Stream procedural terrain/water into the same generic render path used
-    // by authored entities. The bridge contains no game-specific knowledge.
     (void)world_render_.sync(runtime, target);
 }
 
