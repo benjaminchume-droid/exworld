@@ -5,6 +5,7 @@
 #include "exgine/android_audio.hpp"
 #include "exgine/mobile.hpp"
 #include "exgine/render.hpp"
+#include "exgine/asset.hpp"
 
 #include <android/asset_manager.h>
 #include <android/input.h>
@@ -17,6 +18,7 @@
 #include <exception>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -32,7 +34,7 @@ std::uint64_t monotonic_time_ns() {
            static_cast<std::uint64_t>(v.tv_nsec);
 }
 
-bool read_asset(AAssetManager* m, std::string_view path, std::string& out) {
+bool read_asset_bytes(AAssetManager* m, std::string_view path, std::vector<std::uint8_t>& out) {
     if (!m) return false;
     AAsset* a = AAssetManager_open(m, std::string(path).c_str(), AASSET_MODE_BUFFER);
     if (!a) return false;
@@ -43,8 +45,14 @@ bool read_asset(AAssetManager* m, std::string_view path, std::string& out) {
     return got >= 0 && static_cast<std::size_t>(got) == n;
 }
 
-bool resolve_and_load(AAssetManager* m, std::string_view path, std::string& out) {
-    std::string p(path);
+bool read_asset(AAssetManager* m, std::string_view path, std::string& out) { std::vector<std::uint8_t> bytes; if (!read_asset_bytes(m,path,bytes)) return false; out.assign(reinterpret_cast<const char*>(bytes.data()),bytes.size()); return true; }
+
+std::string normalize_asset_path(std::string_view path) { std::string p(path); while(p.rfind("./",0)==0)p.erase(0,2); if(p.rfind("content/",0)==0)p.erase(0,8); return p; }
+
+bool resolve_and_load(AAssetManager* m, const exgine::AssetDatabase* package, std::string_view path, std::string& out) {
+    const std::string normalized = normalize_asset_path(path);
+    if (package) { if (const auto* a=package->find_uri(normalized)) { out.assign(reinterpret_cast<const char*>(a->data.data()),a->data.size()); return true; } if (const auto* a=package->find_uri(std::string("content/")+normalized)) { out.assign(reinterpret_cast<const char*>(a->data.data()),a->data.size()); return true; } }
+    std::string p(normalized);
     if (p.rfind("./", 0) == 0) p = p.substr(2);
     if (p.rfind("content/", 0) == 0) p = p.substr(8);
     if (p == "City" || p == "Main" || p == "CityScene") p = "scenes/city.scene";
@@ -62,6 +70,8 @@ struct AppState {
     std::unique_ptr<exgine::AndroidAudioBackend> audio;
     std::unique_ptr<exworld::ExWorldGame> game;
     AAssetManager* assets = nullptr;
+    exgine::AssetDatabase package;
+    bool package_loaded = false;
     int width = 1280;
     int height = 720;
     double previous_time = 0;
@@ -128,8 +138,15 @@ int32_t handle_input(android_app* app, AInputEvent* input) {
 
 bool boot_game(AppState& state) {
     try {
+        std::vector<std::uint8_t> package_bytes;
+        if (read_asset_bytes(state.assets, "world.exg", package_bytes)) {
+            const auto loaded = state.package.unpack(package_bytes);
+            state.package_loaded = loaded.success;
+            if (loaded.success) LOGI("world.exg loaded: %zu assets", state.package.size());
+            else LOGW("world.exg rejected: %s", loaded.error.c_str());
+        } else LOGW("world.exg missing; using direct assets");
         auto loader = [&state](std::string_view path, std::string& out) -> bool {
-            return resolve_and_load(state.assets, path, out);
+            return resolve_and_load(state.assets, state.package_loaded ? &state.package : nullptr, path, out);
         };
         state.game = std::make_unique<exworld::ExWorldGame>(loader);
         std::string manifest;
