@@ -56,7 +56,7 @@ android {
 
     sourceSets {
         main {
-            assets.srcDirs = ['../../../content']
+            assets.srcDirs = ['generated-assets']
         }
     }
 
